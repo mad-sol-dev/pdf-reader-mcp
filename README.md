@@ -1,107 +1,169 @@
-# PDF Reader MCP Server
+<div align="center">
 
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/sylphxltd-pdf-reader-mcp-badge.png)](https://mseep.ai/app/sylphxltd-pdf-reader-mcp)
-[![CI/CD Pipeline](https://github.com/sylphxltd/pdf-reader-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/sylphxltd/pdf-reader-mcp/actions/workflows/ci.yml)
+# 📄 PDF Reader MCP Server
+
+### The Ultimate PDF Processing Engine for AI Agents
+
+[![MseeP.ai Security](https://mseep.net/pr/sylphxltd-pdf-reader-mcp-badge.png)](https://mseep.ai/app/sylphxltd-pdf-reader-mcp)
+[![CI/CD](https://github.com/sylphxltd/pdf-reader-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/sylphxltd/pdf-reader-mcp/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/sylphxltd/pdf-reader-mcp/graph/badge.svg?token=VYRQFB40UN)](https://codecov.io/gh/sylphxltd/pdf-reader-mcp)
-[![npm version](https://badge.fury.io/js/%40sylphx%2Fpdf-reader-mcp.svg)](https://badge.fury.io/js/%40sylphx%2Fpdf-reader-mcp)
+[![npm version](https://badge.fury.io/js/%40sylphx%2Fpdf-reader-mcp.svg)](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
+[![Downloads](https://img.shields.io/npm/dm/@sylphx/pdf-reader-mcp.svg)](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![smithery badge](https://smithery.ai/badge/@sylphx/pdf-reader-mcp)](https://smithery.ai/server/@sylphx/pdf-reader-mcp)
 
 <a href="https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp/badge" alt="PDF Reader Server MCP server" />
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp/badge" alt="PDF Reader MCP Server" />
 </a>
 
-> 🚀 **The most powerful and reliable PDF reading server for AI agents** - Battle-tested, production-ready, and loved by developers worldwide.
+**Trusted by developers worldwide** • **Battle-tested** • **Production-ready**
 
-**Supercharge your AI agents** with enterprise-grade PDF processing capabilities through the Model Context Protocol (MCP). Extract text, images, and metadata with unmatched performance and reliability.
+[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Examples](#-usage-examples)
 
-## ⚡ Why Choose PDF Reader MCP?
+</div>
 
-- 🏆 **Production-Ready**: 94%+ test coverage, rigorous CI/CD, zero-compromise quality
-- ⚡ **Blazingly Fast**: Parallel processing achieves 5-10x speedup on multi-page documents
-- 🎯 **Intelligent Ordering**: Y-coordinate based content extraction preserves document layout
-- 🖼️ **Advanced Image Extraction**: Extract embedded images with full metadata support
-- 🔒 **Enterprise Security**: Both absolute and relative path support with flexible configuration
-- 🌐 **Universal Compatibility**: Works with local files and remote URLs seamlessly
-- 🎨 **Format Support**: RGB, RGBA, Grayscale images • JPEG, PNG, and more
-- 📦 **Zero Config**: Works out of the box with sensible defaults
-- 🔄 **Batch Processing**: Handle multiple PDFs in parallel for maximum efficiency
-- 🛠️ **Developer Experience**: TypeScript-native, comprehensive error handling, detailed logging
+---
+
+## 🎯 What Makes Us Different
+
+<table>
+<tr>
+<td width="33%" align="center">
+<h3>⚡ Blazingly Fast</h3>
+<p><strong>5-10x speedup</strong> with parallel processing<br/>Process 50-page PDFs in seconds</p>
+</td>
+<td width="33%" align="center">
+<h3>🎯 Intelligent</h3>
+<p><strong>Y-coordinate ordering</strong><br/>Content flows naturally for AI models</p>
+</td>
+<td width="33%" align="center">
+<h3>🔒 Flexible & Secure</h3>
+<p><strong>Absolute & relative paths</strong><br/>Works with any file location</p>
+</td>
+</tr>
+</table>
+
+> 🚀 **Built for scale** - From hobbyist projects to enterprise production environments
 
 ## ✨ Features
 
-### Core Capabilities
-- 📄 **Text Extraction** - Full document or specific pages with intelligent parsing
-- 🖼️ **Image Extraction** - Base64-encoded images with complete metadata
-- 📐 **Content Ordering** - Preserve exact document layout using Y-coordinates
-- 📊 **Metadata Extraction** - Author, title, creation date, and custom properties
-- 🔢 **Page Counting** - Fast page enumeration without full content loading
-- 🌐 **Dual Source Support** - Local files (absolute or relative paths) and HTTP/HTTPS URLs
-- 🔄 **Batch Operations** - Process multiple PDFs concurrently
-- 📦 **Flexible Deployment** - npm, npx, or Smithery installation
+<table>
+<tr>
+<td width="50%">
 
-### Advanced Features
-- ⚡ **5-10x Performance** - Parallel page processing with Promise.all
-- 🎯 **Smart Pagination** - Extract specific pages or ranges (e.g., "1-5,10-15,20")
-- 🖼️ **Multi-Format Images** - RGB, RGBA, Grayscale with automatic format detection
-- 📍 **Y-Coordinate Ordering** - Content parts in natural reading sequence
-- 🛡️ **Flexible Security** - Absolute/relative paths with configurable working directory
-- 🔍 **Error Resilience** - Per-page error isolation, detailed error messages
-- 📏 **Large File Handling** - Efficient streaming and memory management
+### 📄 Core Capabilities
+- ✅ **Text Extraction** - Full document or specific pages
+- ✅ **Image Extraction** - Base64-encoded with metadata
+- ✅ **Content Ordering** - Y-coordinate based layout preservation
+- ✅ **Metadata Extraction** - Author, title, dates, properties
+- ✅ **Page Counting** - Fast enumeration without loading
+- ✅ **Dual Sources** - Local files & HTTP/HTTPS URLs
+- ✅ **Batch Processing** - Multiple PDFs in parallel
 
-## 🆕 Latest Updates
+</td>
+<td width="50%">
 
-### v1.3.0 - Absolute Path Support (November 2025) 🎉
-- ✅ **Absolute Paths Now Supported**: Windows (`C:\Users\...`) and Unix (`/home/...`) paths work flawlessly
-- ✅ **Flexible Path Resolution**: Use absolute paths directly or relative paths resolved against `cwd`
-- ✅ **Windows Native Support**: Proper handling of backslashes and drive letters
-- ✅ **Enhanced Developer Experience**: No more "Absolute paths are not allowed" errors
-- ✅ **Backward Compatible**: Existing relative path configurations continue to work
-- 🐛 **Bug Fixes**: Improved Zod validation error handling
+### 🚀 Advanced Features
+- ✅ **5-10x Performance** - Parallel page processing
+- ✅ **Smart Pagination** - Ranges like "1-5,10-15,20"
+- ✅ **Multi-Format Images** - RGB, RGBA, Grayscale
+- ✅ **Path Flexibility** - Windows, Unix, relative paths
+- ✅ **Error Resilience** - Per-page isolation
+- ✅ **Large File Support** - Efficient memory management
+- ✅ **Type Safe** - Full TypeScript, strict mode
+
+</td>
+</tr>
+</table>
+
+## 🆕 What's New in v1.3.0
+
+<div align="center">
+
+### 🎉 Absolute Paths Now Supported!
+
+No more `"Absolute paths are not allowed"` errors
+
+</div>
+
+```json
+// Windows - Both work!
+{ "path": "C:\\Users\\John\\Documents\\report.pdf" }
+{ "path": "C:/Users/John/Documents/report.pdf" }
+
+// Unix/Mac
+{ "path": "/home/john/documents/report.pdf" }
+{ "path": "/Users/john/Documents/report.pdf" }
+
+// Relative (still works as before)
+{ "path": "documents/report.pdf" }
+```
+
+**Other Improvements:**
+- 🐛 Fixed Zod validation error handling
+- 📦 Updated all dependencies to latest versions
+- ✅ 103 tests passing, 94%+ coverage maintained
+
+<details>
+<summary><strong>📋 Full Changelog</strong></summary>
 
 ### v1.2.0 - Content Ordering
-- ✅ **Y-Coordinate Based Ordering**: Text and images in exact document sequence
-- ✅ **Natural Reading Flow**: AI understands content context with preserved layout
-- ✅ **Intelligent Line Grouping**: Multi-line text blocks automatically merged
-- ✅ **AI-Optimized**: Perfect for vision-enabled models
+- Y-coordinate based text and image ordering
+- Natural reading flow for AI models
+- Intelligent line grouping
 
 ### v1.1.0 - Image Extraction & Performance
-- ✅ **Image Extraction**: Base64-encoded images with metadata (width, height, format)
-- ✅ **10x Faster**: Parallel page processing with Promise.all
-- ✅ **Deep Refactoring**: Modular architecture with 94%+ test coverage
-- ✅ **Format Support**: JPEG, PNG, RGB, RGBA, Grayscale
+- Base64-encoded image extraction
+- 10x speedup with parallel processing
+- Comprehensive test coverage (94%+)
+
+[View Full Changelog →](./CHANGELOG.md)
+
+</details>
+
+---
 
 ## 📦 Installation
 
-### Quick Start (Recommended)
+<table>
+<tr>
+<td width="33%" align="center">
 
-The fastest way to get started - no installation required:
+### ⚡ Quick Start
+**Zero install, try immediately**
 
 ```bash
 npx @sylphx/pdf-reader-mcp
 ```
 
-### Option 1: Using Smithery (Easiest for Claude Desktop)
+</td>
+<td width="33%" align="center">
 
-Install automatically for Claude Desktop:
-
-```bash
-npx -y @smithery/cli install @sylphx/pdf-reader-mcp --client claude
-```
-
-### Option 2: Using npm/pnpm (Most Flexible)
-
-Install the package:
+### 📦 Package Manager
+**Recommended for projects**
 
 ```bash
-# Using pnpm (recommended)
 pnpm add @sylphx/pdf-reader-mcp
-
-# Using npm
-npm install @sylphx/pdf-reader-mcp
 ```
 
-Configure your MCP client (e.g., Claude Desktop, Cursor, Cline):
+</td>
+<td width="33%" align="center">
+
+### 🎯 Smithery
+**Easiest for Claude Desktop**
+
+```bash
+npx -y @smithery/cli install \
+  @sylphx/pdf-reader-mcp \
+  --client claude
+```
+
+</td>
+</tr>
+</table>
+
+### ⚙️ Configuration
+
+Add to your MCP client configuration (Claude Desktop, Cursor, Cline):
 
 ```json
 {
@@ -114,8 +176,10 @@ Configure your MCP client (e.g., Claude Desktop, Cursor, Cline):
 }
 ```
 
-**Pro Tip**: Set a custom working directory for your projects:
+<details>
+<summary><strong>🔧 Advanced Configuration</strong></summary>
 
+**Custom working directory:**
 ```json
 {
   "mcpServers": {
@@ -128,98 +192,112 @@ Configure your MCP client (e.g., Claude Desktop, Cursor, Cline):
 }
 ```
 
-### Option 3: Local Development Build
-
+**Local development:**
 ```bash
 git clone https://github.com/sylphxltd/pdf-reader-mcp.git
 cd pdf-reader-mcp
-pnpm install
-pnpm run build
+pnpm install && pnpm build
 ```
 
-## 🚀 Quick Start Examples
+Then use `node dist/index.js` in your configuration.
 
-### Example 1: Extract Text with Absolute Paths (NEW in v1.3.0!)
+</details>
+
+---
+
+## 🚀 Usage Examples
+
+### 1️⃣ Absolute Paths (NEW!)
+
+<table>
+<tr>
+<td width="50%">
+
+**Windows:**
+```json
+{
+  "sources": [{
+    "path": "C:\\Reports\\Q4-2024.pdf"
+  }],
+  "include_full_text": true
+}
+```
+
+</td>
+<td width="50%">
+
+**Unix/Mac:**
+```json
+{
+  "sources": [{
+    "path": "/home/user/docs/report.pdf"
+  }],
+  "include_full_text": true
+}
+```
+
+</td>
+</tr>
+</table>
+
+### 2️⃣ Smart Page Selection
 
 ```json
 {
-  "sources": [
-    {
-      "path": "C:\\Users\\John\\Documents\\report.pdf"
-    }
-  ],
+  "sources": [{
+    "path": "documents/annual-report.pdf",
+    "pages": "1-5,10,15-20"  // Ranges + individual pages
+  }],
   "include_full_text": true,
   "include_metadata": true
 }
 ```
 
-**Windows Users**: Both forward slashes and backslashes work! The server handles path normalization automatically.
-
-### Example 2: Extract Specific Pages
+### 3️⃣ Image Extraction with Natural Ordering
 
 ```json
 {
-  "sources": [
-    {
-      "path": "documents/annual-report.pdf",
-      "pages": "1-5,10,15-20"
-    }
-  ],
-  "include_full_text": true
-}
-```
-
-### Example 3: Extract Images with Natural Ordering
-
-```json
-{
-  "sources": [
-    {
-      "path": "presentation.pdf",
-      "pages": [1, 2, 3]
-    }
-  ],
+  "sources": [{
+    "path": "presentation.pdf",
+    "pages": [1, 2, 3]
+  }],
   "include_images": true,
   "include_full_text": true
 }
 ```
 
-**Response includes**:
-- Text and images in exact document order (top to bottom)
-- Base64-encoded images with metadata (width, height, format)
-- Natural reading flow preserved for AI comprehension
+**Response includes:**
+- ✅ Text and images in **exact document order** (Y-coordinate sorted)
+- ✅ Base64-encoded images with metadata (width, height, format)
+- ✅ Natural reading flow preserved for AI comprehension
 
-### Example 4: Read from URL
+### 4️⃣ Remote URLs
 
 ```json
 {
-  "sources": [
-    {
-      "url": "https://arxiv.org/pdf/2301.00001.pdf"
-    }
-  ],
-  "include_full_text": true,
-  "include_metadata": true
+  "sources": [{
+    "url": "https://arxiv.org/pdf/2301.00001.pdf"
+  }],
+  "include_full_text": true
 }
 ```
 
-### Example 5: Batch Process Multiple PDFs
+### 5️⃣ Batch Processing
 
 ```json
 {
   "sources": [
     { "path": "C:\\Reports\\Q1.pdf", "pages": "1-10" },
-    { "path": "/home/user/docs/Q2.pdf", "pages": "1-10" },
+    { "path": "/home/user/Q2.pdf", "pages": "1-10" },
     { "url": "https://example.com/Q3.pdf" }
   ],
-  "include_full_text": true,
-  "include_metadata": true
+  "include_full_text": true
 }
 ```
 
-**Processes all PDFs in parallel** - Maximum performance for bulk operations!
+**⚡ All PDFs processed in parallel for maximum performance!**
 
-### Example 6: Metadata and Page Count Only (Lightning Fast)
+### 6️⃣ Metadata Only (Lightning Fast)
 
 ```json
 {
@@ -230,63 +308,52 @@ pnpm run build
 }
 ```
 
-Perfect for quickly scanning PDF properties without loading content.
+---
 
 ## 📖 Advanced Usage
 
-### Page Specification Formats
+<details>
+<summary><strong>📐 Content Ordering (Y-Coordinate Based)</strong></summary>
 
-Flexible page selection with multiple formats:
+### How It Works
 
-- **Array**: `[1, 3, 5, 7]` - Specific pages (1-based indexing)
-- **Range**: `"1-10"` - Continuous range
-- **Mixed**: `"1-5,10-15,20,25-30"` - Combine ranges and individual pages
-- **All pages**: Omit `pages` field entirely
-
-### Content Ordering (v1.2.0+)
-
-**Revolutionary Y-coordinate based ordering** ensures AI models receive content in natural reading sequence:
+Our revolutionary Y-coordinate based ordering ensures AI models receive content in natural reading sequence:
 
 ```
-Document Layout:
-┌─────────────────────┐
-│ [Title Text]        │ ← Y: 100
-│ [Image: Chart]      │ ← Y: 150
-│ [Analysis Text]     │ ← Y: 400
-│ [Image: Photo A]    │ ← Y: 500
-│ [Image: Photo B]    │ ← Y: 550
-│ [Conclusion]        │ ← Y: 750
-└─────────────────────┘
+Document Layout (by Y-coordinate):
+┌─────────────────────────┐
+│ [Title Text]      Y:100 │
+│ [Chart Image]     Y:150 │
+│ [Analysis Text]   Y:400 │
+│ [Photo A]         Y:500 │
+│ [Photo B]         Y:550 │
+│ [Conclusion]      Y:750 │
+└─────────────────────────┘
 
-Content Parts Returned (Ordered by Y-coordinate):
+Content Parts Returned (Ordered):
 [
-  { type: "text", text: "Title Text" },
-  { type: "image", data: "base64..." },      // Chart
-  { type: "text", text: "Analysis Text" },
-  { type: "image", data: "base64..." },      // Photo A
-  { type: "image", data: "base64..." },      // Photo B
-  { type: "text", text: "Conclusion" }
+  { type: "text", text: "Title..." },
+  { type: "image", data: "base64..." },  // Chart
+  { type: "text", text: "Analysis..." },
+  { type: "image", data: "base64..." },  // Photo A
+  { type: "image", data: "base64..." },  // Photo B
+  { type: "text", text: "Conclusion..." }
 ]
 ```
 
-**Benefits**:
-- ✅ AI understands spatial relationships between text and images
-- ✅ Natural document comprehension for vision models
+**Benefits:**
+- ✅ AI understands spatial relationships
+- ✅ Natural document comprehension
+- ✅ Perfect for vision-enabled models (GPT-4V, Claude 3)
 - ✅ Automatic multi-line text grouping
-- ✅ Perfect for complex layouts with mixed content
 
-### Image Extraction Deep Dive
+</details>
 
-Extract embedded images with complete control:
+<details>
+<summary><strong>🖼️ Image Extraction Deep Dive</strong></summary>
 
-```json
-{
-  "sources": [{ "path": "technical-manual.pdf" }],
-  "include_images": true
-}
-```
+### Image Response Format
 
-**Image Response Format**:
 ```json
 {
   "images": [
@@ -302,50 +369,65 @@ Extract embedded images with complete control:
 }
 ```
 
-**Supported Formats**:
-- ✅ **RGB** - Standard color (most common)
-- ✅ **RGBA** - With transparency/alpha channel
-- ✅ **Grayscale** - Black and white
-- ✅ **JPEG, PNG** - Automatic format detection
+### Supported Formats
 
-**Performance Tips**:
+| Format | Description | Use Case |
+|--------|-------------|----------|
+| **RGB** | Standard color | Most common, photos |
+| **RGBA** | With transparency | Graphics, overlays |
+| **Grayscale** | Black & white | Documents, scans |
+
+**Detected automatically:** JPEG, PNG, and other embedded formats
+
+### Performance Tips
+
+- 🔸 Use `pages` parameter to limit scope
+- 🔸 Set `include_images: false` (default) for text-only
 - 🔸 Images increase response size significantly
-- 🔸 Use `pages` parameter to limit extraction scope
-- 🔸 Set `include_images: false` (default) for text-only extraction
-- 🔸 Perfect for AI models with vision capabilities (GPT-4V, Claude 3, etc.)
+- 🔸 Combine with pagination for large documents
 
-### Path Configuration Guide (v1.3.0+)
+</details>
 
-**Absolute Paths** (NEW - No longer restricted!):
+<details>
+<summary><strong>📂 Path Configuration Best Practices</strong></summary>
 
+### When to Use Each
+
+**Absolute Paths** (v1.3.0+)
 ```json
-// Windows
-{ "path": "C:\\Users\\John\\Documents\\report.pdf" }
-{ "path": "C:/Users/John/Documents/report.pdf" }  // Also works!
+// ✅ User file selections (drag & drop, file picker)
+{ "path": "C:\\Users\\John\\Downloads\\invoice.pdf" }
 
-// Unix/Mac
-{ "path": "/home/john/documents/report.pdf" }
-{ "path": "/Users/john/Documents/report.pdf" }
+// ✅ System-wide file access
+{ "path": "/etc/documents/config.pdf" }
 ```
 
-**Relative Paths**:
-
+**Relative Paths**
 ```json
-// Resolved against process.cwd() or configured cwd
-{ "path": "documents/report.pdf" }
+// ✅ Project files (version controlled, portable)
+{ "path": "docs/architecture.pdf" }
+
+// ✅ Workspace-relative files
 { "path": "./reports/2024/Q1.pdf" }
-{ "path": "../shared/archive.pdf" }
 ```
 
-**Best Practices**:
-- ✅ Use absolute paths for user-specified files (drag & drop, file picker)
-- ✅ Use relative paths for project files (version controlled, portable)
-- ✅ Configure `cwd` in MCP settings for workspace-relative paths
-- ✅ Windows: Both `\` and `/` work - use what's comfortable!
+### Windows Path Handling
 
-### Working with Large PDFs
+Both forward slashes and backslashes work:
 
-**Strategy 1**: Extract specific pages to avoid context limits
+```json
+{ "path": "C:\\Users\\John\\file.pdf" }  // ✅ Works
+{ "path": "C:/Users/John/file.pdf" }     // ✅ Also works!
+```
+
+The server automatically normalizes paths.
+
+</details>
+
+<details>
+<summary><strong>📊 Working with Large PDFs</strong></summary>
+
+### Strategy 1: Page Ranges
 
 ```json
 {
@@ -355,7 +437,7 @@ Extract embedded images with complete control:
 }
 ```
 
-**Strategy 2**: Get metadata first, then fetch specific sections
+### Strategy 2: Progressive Loading
 
 ```json
 // Step 1: Get page count
@@ -367,13 +449,11 @@ Extract embedded images with complete control:
 
 // Step 2: Extract sections as needed
 {
-  "sources": [
-    { "path": "large.pdf", "pages": "50-75" }
-  ]
+  "sources": [{ "path": "large.pdf", "pages": "50-75" }]
 }
 ```
 
-**Strategy 3**: Process in batches with parallel execution
+### Strategy 3: Parallel Batching
 
 ```json
 {
@@ -385,11 +465,21 @@ Extract embedded images with complete control:
 }
 ```
 
+**⚡ Server processes all batches in parallel!**
+
+</details>
+
+---
+
 ## 🔧 Troubleshooting
 
-### Issue: "Absolute paths are not allowed" (FIXED in v1.3.0)
+<table>
+<tr>
+<td width="50%">
 
-**Upgrade to v1.3.0+** to use absolute paths:
+### ❌ "Absolute paths are not allowed"
+
+**Solution:** Upgrade to v1.3.0+
 
 ```bash
 npm update @sylphx/pdf-reader-mcp
@@ -397,51 +487,42 @@ npm update @sylphx/pdf-reader-mcp
 npx @sylphx/pdf-reader-mcp@latest
 ```
 
-Then restart your MCP client. Absolute paths now work perfectly!
+Restart your MCP client completely.
 
-### Issue: "File not found" errors
+</td>
+<td width="50%">
 
-**Possible Causes**:
-1. Incorrect working directory
-2. File doesn't exist at specified path
-3. Permission issues
+### ❌ "File not found" errors
 
-**Solutions**:
+**Check:**
+1. File exists at path
+2. Correct working directory
+3. File permissions
 
-**For absolute paths** (v1.3.0+):
+**For absolute paths:**
 ```json
-{
-  "sources": [
-    { "path": "C:\\Full\\Path\\To\\file.pdf" }
-  ]
-}
+{ "path": "C:\\Full\\Path\\To\\file.pdf" }
 ```
 
-**For relative paths**, configure `cwd`:
+**For relative paths, set `cwd`:**
 ```json
 {
-  "mcpServers": {
-    "pdf-reader-mcp": {
-      "command": "npx",
-      "args": ["@sylphx/pdf-reader-mcp"],
-      "cwd": "/path/to/your/documents"
-    }
+  "pdf-reader-mcp": {
+    "command": "npx",
+    "args": ["@sylphx/pdf-reader-mcp"],
+    "cwd": "/path/to/docs"
   }
 }
 ```
 
-**Verify file exists**:
-```bash
-# Windows
-dir "C:\Path\To\file.pdf"
+</td>
+</tr>
+<tr>
+<td width="50%">
 
-# Unix/Mac
-ls -la /path/to/file.pdf
-```
+### ❌ "No tools" showing up
 
-### Issue: "No tools" showing up
-
-**Solution**: Clear cache and reinstall:
+**Solution:** Clear cache and reinstall
 
 ```bash
 npm cache clean --force
@@ -449,72 +530,101 @@ rm -rf node_modules package-lock.json
 npm install @sylphx/pdf-reader-mcp@latest
 ```
 
-Then **restart your MCP client completely** (not just reload).
+Restart MCP client completely.
 
-### Issue: Large response size with images
+</td>
+<td width="50%">
 
-**Solutions**:
-- Use `pages` parameter to limit extraction
-- Set `include_images: false` if images not needed
-- Extract text and images in separate requests
-- Use pagination for large documents
+### ⚠️ Large response size
 
-### Issue: Slow performance on large PDFs
+**Solutions:**
+- Use `pages` parameter
+- Set `include_images: false`
+- Extract text and images separately
+- Use pagination
 
-**Optimization checklist**:
-- ✅ Extract specific pages instead of full document
-- ✅ Disable image extraction if not needed
-- ✅ Use batch processing for multiple PDFs
-- ✅ Get metadata/page count only when full text not required
-- ✅ Server automatically uses parallel processing (5-10x faster)
+</td>
+</tr>
+</table>
 
-## ⚡ Performance Benchmarks
+---
 
-**Real-world performance** on production workloads:
+## ⚡ Performance
 
-| Operation                          | Ops/sec | Relative Speed |
-| :--------------------------------- | :------ | :------------- |
-| Error handling (non-existent file) | ~12,933 | ⚡⚡⚡⚡⚡         |
-| Extract full text                  | ~5,575  | ⚡⚡⚡⚡          |
-| Extract specific page              | ~5,329  | ⚡⚡⚡⚡          |
-| Extract multiple pages             | ~5,242  | ⚡⚡⚡⚡          |
-| Metadata + page count              | ~4,912  | ⚡⚡⚡           |
+<div align="center">
 
-**Parallel Processing Benefits**:
-- 10-page PDF: **5-8x faster** than sequential
-- 50-page PDF: **10x faster** than sequential
-- 100+ page PDF: **Linear scalability** with CPU cores
+### Real-World Benchmarks
 
-_Performance varies based on PDF complexity, image count, and system resources._
+| Operation | Ops/sec | Speed |
+|:----------|:--------|:------|
+| Error handling (non-existent file) | ~12,933 | ⚡⚡⚡⚡⚡ |
+| Extract full text | ~5,575 | ⚡⚡⚡⚡ |
+| Extract specific page | ~5,329 | ⚡⚡⚡⚡ |
+| Extract multiple pages | ~5,242 | ⚡⚡⚡⚡ |
+| Metadata + page count | ~4,912 | ⚡⚡⚡ |
 
-See [Performance Documentation](./docs/performance/index.md) for detailed benchmarks.
+### Parallel Processing Benefits
 
-## 🏗️ Architecture & Tech Stack
+| Document Size | Speedup vs Sequential |
+|:--------------|:---------------------|
+| 10-page PDF | **5-8x faster** |
+| 50-page PDF | **10x faster** |
+| 100+ page PDF | **Linear scalability** with CPU cores |
 
-### Technology
-- **Runtime**: Node.js 22+ (ESM modules)
-- **PDF Engine**: PDF.js (pdfjs-dist) - Mozilla's battle-tested engine
-- **Validation**: Zod with automatic JSON Schema generation
-- **Protocol**: MCP SDK (@modelcontextprotocol/sdk)
-- **Language**: TypeScript (strict mode)
-- **Testing**: Vitest with 94%+ coverage (103 tests)
-- **Code Quality**: Biome (50x faster than ESLint + Prettier)
-- **CI/CD**: GitHub Actions with automated testing and publishing
+*Performance varies based on PDF complexity and system resources*
+
+</div>
+
+---
+
+## 🏗️ Architecture
+
+<div align="center">
+
+### Tech Stack
+
+| Component | Technology | Why |
+|:----------|:-----------|:----|
+| **Runtime** | Node.js 22+ ESM | Modern, fast, native ESM |
+| **PDF Engine** | PDF.js (Mozilla) | Battle-tested, reliable |
+| **Validation** | Zod + JSON Schema | Type-safe, auto-generated |
+| **Protocol** | MCP SDK | Official implementation |
+| **Language** | TypeScript (strict) | Type safety, no compromises |
+| **Testing** | Vitest | 103 tests, 94%+ coverage |
+| **Code Quality** | Biome | 50x faster than ESLint |
+| **CI/CD** | GitHub Actions | Automated testing & publishing |
+
+</div>
 
 ### Design Principles
 
-1. 🔒 **Security First** - Flexible path handling with secure defaults
-2. 🎯 **Simple Interface** - Single tool handles all PDF operations elegantly
-3. 📊 **Structured Output** - Predictable JSON format optimized for AI parsing
-4. ⚡ **Performance** - Parallel processing, efficient memory management
-5. 🛡️ **Reliability** - Comprehensive error handling, per-page isolation
-6. 🧪 **Test Coverage** - 103 tests, 94%+ coverage, zero compromises
-7. 📝 **Type Safety** - Full TypeScript, no any types, strict mode
-8. 🔄 **Backward Compatible** - Smooth upgrades, no breaking changes
+<table>
+<tr>
+<td width="25%" align="center">
+<strong>🔒 Security First</strong><br/>
+<sub>Flexible paths with secure defaults</sub>
+</td>
+<td width="25%" align="center">
+<strong>🎯 Simple Interface</strong><br/>
+<sub>One tool, all operations</sub>
+</td>
+<td width="25%" align="center">
+<strong>⚡ Performance</strong><br/>
+<sub>Parallel processing, efficient memory</sub>
+</td>
+<td width="25%" align="center">
+<strong>🧪 Quality</strong><br/>
+<sub>94%+ coverage, zero compromises</sub>
+</td>
+</tr>
+</table>
 
-See [Design Philosophy](./docs/design/index.md) for architectural deep dive.
+---
 
 ## 🧪 Development
+
+<details>
+<summary><strong>🛠️ Setup & Scripts</strong></summary>
 
 ### Prerequisites
 - Node.js >= 22.0.0
@@ -524,53 +634,50 @@ See [Design Philosophy](./docs/design/index.md) for architectural deep dive.
 ```bash
 git clone https://github.com/sylphxltd/pdf-reader-mcp.git
 cd pdf-reader-mcp
-pnpm install
-pnpm run build
+pnpm install && pnpm build
 ```
 
-### Development Scripts
+### Available Scripts
 ```bash
 pnpm run build          # Build TypeScript → dist/
 pnpm run watch          # Build in watch mode
-pnpm run test           # Run all 103 tests
+pnpm run test           # Run 103 tests
 pnpm run test:watch     # Tests in watch mode
 pnpm run test:cov       # Coverage report (94%+)
-pnpm run check          # Lint + format check (Biome)
-pnpm run check:fix      # Auto-fix all issues
+pnpm run check          # Lint + format (Biome)
+pnpm run check:fix      # Auto-fix issues
 pnpm run typecheck      # TypeScript validation
-pnpm run benchmark      # Performance benchmarks
-pnpm run validate       # Full validation (check + test)
+pnpm run benchmark      # Performance tests
+pnpm run validate       # Full validation
 ```
 
-### Testing & Quality
-- **103 tests** covering all functionality
-- **94%+ code coverage** (lines, statements)
-- **98%+ function coverage**
-- **Zero lint errors** enforced by CI
-- **Strict TypeScript** mode enabled
+### Quality Standards
+- ✅ **103 tests** covering all functionality
+- ✅ **94%+ code coverage** (lines, statements)
+- ✅ **98%+ function coverage**
+- ✅ **Zero lint errors** enforced by CI
+- ✅ **Strict TypeScript** mode enabled
 
-```bash
-pnpm run test         # All tests must pass
-pnpm run test:cov     # Generate coverage report
-pnpm run check        # Code quality check
-```
+</details>
 
-### Contributing
+<details>
+<summary><strong>🤝 Contributing</strong></summary>
 
 We welcome contributions! 🎉
 
-**Quick Start**:
+### Quick Start
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/awesome-feature`
-3. Make your changes and ensure tests pass: `pnpm test`
+2. Create feature branch: `git checkout -b feature/awesome`
+3. Make changes and test: `pnpm test`
 4. Format code: `pnpm run check:fix`
-5. Commit using [Conventional Commits](https://www.conventionalcommits.org/)
-6. Open a Pull Request
+5. Commit with [Conventional Commits](https://www.conventionalcommits.org/)
+6. Open Pull Request
 
-**Commit Format**:
+### Commit Format
 ```
 type(scope): description
 
+Examples:
 feat(images): add WebP format support
 fix(paths): handle Windows UNC paths
 docs(readme): update installation guide
@@ -578,82 +685,163 @@ docs(readme): update installation guide
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.
 
+</details>
+
+---
+
 ## 📚 Documentation
 
-- 📖 **[Full Documentation](https://sylphxltd.github.io/pdf-reader-mcp/)** - Complete guides and API reference
-- 🚀 **[Getting Started](./docs/guide/getting-started.md)** - Quick start guide
-- 📘 **[API Reference](./docs/api/README.md)** - Detailed API documentation
-- 🏗️ **[Design Philosophy](./docs/design/index.md)** - Architecture decisions
-- ⚡ **[Performance](./docs/performance/index.md)** - Benchmarks and optimization
-- 🔍 **[Comparison](./docs/comparison/index.md)** - vs. other PDF solutions
+<table>
+<tr>
+<td align="center" width="33%">
+
+📖 **[Full Docs](https://sylphxltd.github.io/pdf-reader-mcp/)**
+Complete guides & API reference
+
+</td>
+<td align="center" width="33%">
+
+🚀 **[Getting Started](./docs/guide/getting-started.md)**
+Quick start guide
+
+</td>
+<td align="center" width="33%">
+
+📘 **[API Reference](./docs/api/README.md)**
+Detailed API docs
+
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+
+🏗️ **[Design Philosophy](./docs/design/index.md)**
+Architecture decisions
+
+</td>
+<td align="center" width="33%">
+
+⚡ **[Performance](./docs/performance/index.md)**
+Benchmarks & optimization
+
+</td>
+<td align="center" width="33%">
+
+🔍 **[Comparison](./docs/comparison/index.md)**
+vs. alternatives
+
+</td>
+</tr>
+</table>
+
+---
 
 ## 🗺️ Roadmap
 
-**Completed** ✅
+<table>
+<tr>
+<td width="50%">
+
+### ✅ Completed
+
 - [x] Image extraction (v1.1.0)
 - [x] Parallel processing 5-10x speedup (v1.1.0)
 - [x] Y-coordinate content ordering (v1.2.0)
 - [x] Absolute path support (v1.3.0)
 
-**Coming Soon** 🚀
-- [ ] OCR integration for scanned PDFs (Tesseract.js)
+</td>
+<td width="50%">
+
+### 🚀 Coming Soon
+
+- [ ] OCR for scanned PDFs (Tesseract.js)
 - [ ] PDF annotation extraction
 - [ ] Form field data extraction
 - [ ] Table structure detection
-- [ ] Streaming support for 100+ MB files
-- [ ] Advanced caching with LRU
+- [ ] Streaming for 100+ MB files
+- [ ] Advanced caching (LRU)
 - [ ] PDF generation/manipulation
 
-## 🤝 Support & Community
-
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/sylphxltd/pdf-reader-mcp/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/sylphxltd/pdf-reader-mcp/discussions)
-- 📖 **Contributing**: [CONTRIBUTING.md](./CONTRIBUTING.md)
-- 📧 **Email**: contact@sylphx.com
-
-### Show Your Support
-
-If you find this project valuable:
-
-- ⭐ **Star the repository** - Show your appreciation!
-- 👀 **Watch for updates** - Stay informed about new features
-- 🐛 **Report bugs** - Help us improve quality
-- 💡 **Suggest features** - Shape the roadmap
-- 🔀 **Contribute code** - Join the development
-- 📢 **Spread the word** - Share with your network
-
-## 📊 Project Stats
-
-- 🌟 **Stars**: Growing community of users
-- 🔧 **Commits**: Active development
-- ✅ **Tests**: 103 tests, 94%+ coverage
-- 📦 **Downloads**: Trusted by developers worldwide
-- 🚀 **Releases**: Regular updates and improvements
-
-## 🏆 Recognition
-
-- Featured on [Smithery](https://smithery.ai/server/@sylphx/pdf-reader-mcp)
-- Listed on [Glama MCP Servers](https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp)
-- Security validated by [MseeP.ai](https://mseep.ai/app/sylphxltd-pdf-reader-mcp)
-- Production-ready with enterprise adoption
-
-## 📄 License
-
-This project is licensed under the [MIT License](./LICENSE).
-
-Free for personal and commercial use. Attribution appreciated but not required.
+</td>
+</tr>
+</table>
 
 ---
 
-<p align="center">
-  <strong>Made with ❤️ by <a href="https://sylphx.com">Sylphx</a></strong><br>
-  <sub>Building the future of AI-powered document processing</sub>
-</p>
+## 🤝 Support & Community
 
-<p align="center">
-  <a href="#-installation">Installation</a> •
-  <a href="#-quick-start-examples">Quick Start</a> •
-  <a href="#-advanced-usage">Advanced Usage</a> •
-  <a href="#-documentation">Documentation</a> •
-  <a href="#-support--community">Support</a>
-</p>
+<div align="center">
+
+### Get Help
+
+[![GitHub Issues](https://img.shields.io/github/issues/sylphxltd/pdf-reader-mcp?style=for-the-badge)](https://github.com/sylphxltd/pdf-reader-mcp/issues)
+[![GitHub Discussions](https://img.shields.io/github/discussions/sylphxltd/pdf-reader-mcp?style=for-the-badge)](https://github.com/sylphxltd/pdf-reader-mcp/discussions)
+
+</div>
+
+### Show Your Support
+
+<table>
+<tr>
+<td align="center">⭐<br/><strong>Star</strong><br/>the repo</td>
+<td align="center">👀<br/><strong>Watch</strong><br/>for updates</td>
+<td align="center">🐛<br/><strong>Report</strong><br/>bugs</td>
+<td align="center">💡<br/><strong>Suggest</strong><br/>features</td>
+<td align="center">🔀<br/><strong>Contribute</strong><br/>code</td>
+<td align="center">📢<br/><strong>Share</strong><br/>with others</td>
+</tr>
+</table>
+
+---
+
+## 📊 Project Stats
+
+<div align="center">
+
+![GitHub Stars](https://img.shields.io/github/stars/sylphxltd/pdf-reader-mcp?style=social)
+![GitHub Forks](https://img.shields.io/github/forks/sylphxltd/pdf-reader-mcp?style=social)
+![npm Downloads](https://img.shields.io/npm/dm/@sylphx/pdf-reader-mcp)
+![GitHub Contributors](https://img.shields.io/github/contributors/sylphxltd/pdf-reader-mcp)
+
+**103 Tests** • **94%+ Coverage** • **Active Development** • **Production Ready**
+
+</div>
+
+---
+
+## 🏆 Recognition
+
+<div align="center">
+
+Featured on [Smithery](https://smithery.ai/server/@sylphx/pdf-reader-mcp) • Listed on [Glama](https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp) • Security validated by [MseeP.ai](https://mseep.ai/app/sylphxltd-pdf-reader-mcp)
+
+**Trusted by developers worldwide** • **Enterprise adoption** • **Battle-tested**
+
+</div>
+
+---
+
+## 📄 License
+
+<div align="center">
+
+MIT License - Free for personal and commercial use
+
+[View License](./LICENSE)
+
+</div>
+
+---
+
+<div align="center">
+
+<img src="https://img.shields.io/badge/Made_with-❤️-red?style=for-the-badge" alt="Made with love"/>
+
+**Built by [Sylphx](https://sylphx.com)**
+*Building the future of AI-powered document processing*
+
+---
+
+[⬆ Back to Top](#-pdf-reader-mcp-server)
+
+</div>

@@ -18,7 +18,7 @@ The server provides a single primary tool: `read_pdf`.
 
 The `read_pdf` tool accepts an object with the following properties:
 
-- `sources` (Array<Object>, required): An array of PDF sources to process. Each source object must contain either a `path` or a `url`.
+- `sources` (Array\<Object\>, required): An array of PDF sources to process. Each source object must contain either a `path` or a `url`.
   - `path` (string, optional): Relative path to the local PDF file within the project root.
   - `url` (string, optional): URL of the PDF file.
   - `pages` (Array<number> | string, optional): Extract text only from specific pages (1-based) or ranges (e.g., `'1-3, 5'`). If provided, `include_full_text` is ignored for this source.
@@ -75,7 +75,7 @@ The response will be an array named `results`, with each element corresponding t
   - `num_pages` (number, optional): Total page count (if `include_page_count` was true).
   - `info` (Object, optional): PDF information dictionary (if `include_metadata` was true).
   - `metadata` (Object, optional): PDF metadata (if `include_metadata` was true).
-  - `page_texts` (Array<Object>, optional): Array of objects, each with `page` (number) and `text` (string), for pages where text was extracted (if `pages` was specified or `include_full_text` was true without `pages`).
+  - `page_texts` (Array\<Object\>, optional): Array of objects, each with `page` (number) and `text` (string), for pages where text was extracted (if `pages` was specified or `include_full_text` was true without `pages`).
 - `error` (Object, optional): Present if `success` is `false`. Contains:
   - `code` (string): An error code (e.g., `FileNotFound`, `InvalidRequest`, `PdfParsingError`, `DownloadError`, `UnknownError`).
   - `message` (string): A description of the error.

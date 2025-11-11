@@ -1,16 +1,16 @@
 <div align="center">
 
-# PDF Reader MCP ⚡
+# PDF Reader MCP 📄
 
-**The fastest and most powerful PDF processing server for AI agents**
+**Production-ready PDF processing server for AI agents**
 
-[![CI/CD](https://github.com/SylphxAI/pdf-reader-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/SylphxAI/pdf-reader-mcp/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/SylphxAI/pdf-reader-mcp/graph/badge.svg?token=VYRQFB40UN)](https://codecov.io/gh/SylphxAI/pdf-reader-mcp)
-[![npm version](https://badge.fury.io/js/%40sylphx%2Fpdf-reader-mcp.svg)](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
-[![Downloads](https://img.shields.io/npm/dm/@sylphx/pdf-reader-mcp.svg)](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI/CD](https://img.shields.io/github/actions/workflow/status/SylphxAI/pdf-reader-mcp/ci.yml?style=flat-square&label=CI/CD)](https://github.com/SylphxAI/pdf-reader-mcp/actions/workflows/ci.yml)
+[![codecov](https://img.shields.io/codecov/c/github/SylphxAI/pdf-reader-mcp?style=flat-square)](https://codecov.io/gh/SylphxAI/pdf-reader-mcp)
+[![npm version](https://img.shields.io/npm/v/@sylphx/pdf-reader-mcp?style=flat-square)](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
+[![Downloads](https://img.shields.io/npm/dm/@sylphx/pdf-reader-mcp?style=flat-square)](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](https://opensource.org/licenses/MIT)
 
-**5-10x faster parallel processing** • **Y-coordinate content ordering** • **94%+ test coverage** • **Production-ready**
+**5-10x faster parallel processing** • **Y-coordinate content ordering** • **94%+ test coverage** • **103 tests passing**
 
 <a href="https://mseep.ai/app/SylphxAI-pdf-reader-mcp">
 <img src="https://mseep.net/pr/SylphxAI-pdf-reader-mcp-badge.png" alt="Security Validated" width="200"/>
@@ -24,23 +24,69 @@
 
 PDF Reader MCP is a **production-ready** Model Context Protocol server that empowers AI agents with **enterprise-grade PDF processing capabilities**. Extract text, images, and metadata with unmatched performance and reliability.
 
-**Stop struggling with PDF extraction. Choose PDF Reader MCP.**
+**The Problem:**
+```typescript
+// Traditional PDF processing
+- Sequential page processing (slow)
+- No natural content ordering
+- Complex path handling
+- Poor error isolation
+```
 
-## ⚡ Why PDF Reader MCP?
+**The Solution:**
+```typescript
+// PDF Reader MCP
+- 5-10x faster parallel processing ⚡
+- Y-coordinate based ordering 📐
+- Flexible path support (absolute/relative) 🎯
+- Per-page error resilience 🛡️
+- 94%+ test coverage ✅
+```
 
-### **Unmatched Performance**
-- 🚀 **5-10x faster** than sequential processing with automatic parallelization
-- 🔥 **Process 50-page PDFs** in seconds with multi-core utilization
-- ⚡ **~12,933 ops/sec** error handling, ~5,575 ops/sec text extraction
-- 💨 **Streaming support** for efficient large file handling
+**Result: Production-ready PDF processing that scales.**
+
+---
+
+## ⚡ Key Features
+
+### Performance
+
+- 🚀 **5-10x faster** than sequential with automatic parallelization
+- ⚡ **12,933 ops/sec** error handling, 5,575 ops/sec text extraction
+- 💨 **Process 50-page PDFs** in seconds with multi-core utilization
 - 📦 **Lightweight** with minimal dependencies
 
-### **Developer Experience**
-- 🎯 **Path Flexibility** - Absolute & relative paths, Windows/Unix support (NEW v1.3.0)
-- 🖼️ **Smart Ordering** - Y-coordinate based content extraction preserves layout
+### Developer Experience
+
+- 🎯 **Path Flexibility** - Absolute & relative paths, Windows/Unix support (v1.3.0)
+- 🖼️ **Smart Ordering** - Y-coordinate based content preserves document layout
 - 🛡️ **Type Safe** - Full TypeScript with strict mode enabled
-- 📚 **Battle-tested** - 103 tests, 94%+ coverage, zero compromises
+- 📚 **Battle-tested** - 103 tests, 94%+ coverage, 98%+ function coverage
 - 🎨 **Simple API** - Single tool handles all operations elegantly
+
+---
+
+## 📊 Performance Benchmarks
+
+Real-world performance from production testing:
+
+| Operation | Ops/sec | Performance | Use Case |
+|-----------|---------|-------------|----------|
+| **Error handling** | 12,933 | ⚡⚡⚡⚡⚡ | Validation & safety |
+| **Extract full text** | 5,575 | ⚡⚡⚡⚡ | Document analysis |
+| **Extract page** | 5,329 | ⚡⚡⚡⚡ | Single page ops |
+| **Multiple pages** | 5,242 | ⚡⚡⚡⚡ | Batch processing |
+| **Metadata only** | 4,912 | ⚡⚡⚡ | Quick inspection |
+
+### Parallel Processing Speedup
+
+| Document | Sequential | Parallel | Speedup |
+|----------|-----------|----------|---------|
+| **10-page PDF** | ~2s | ~0.3s | **5-8x faster** |
+| **50-page PDF** | ~10s | ~1s | **10x faster** |
+| **100+ pages** | ~20s | ~2s | **Linear scaling** with CPU cores |
+
+*Benchmarks vary based on PDF complexity and system resources.*
 
 ---
 
@@ -113,7 +159,7 @@ Add to your MCP client (`claude_desktop_config.json`, Cursor, Cline):
 }
 ```
 
-### Absolute Paths (NEW in v1.3.0!)
+### Absolute Paths (v1.3.0+)
 
 ```json
 // Windows - Both formats work!
@@ -484,30 +530,6 @@ Restart MCP client completely.
 
 ---
 
-## ⚡ Performance
-
-### Benchmarks
-
-| Operation | Ops/sec | Performance |
-|:----------|:--------|:------------|
-| Error handling | ~12,933 | ⚡⚡⚡⚡⚡ |
-| Extract full text | ~5,575 | ⚡⚡⚡⚡ |
-| Extract page | ~5,329 | ⚡⚡⚡⚡ |
-| Multiple pages | ~5,242 | ⚡⚡⚡⚡ |
-| Metadata only | ~4,912 | ⚡⚡⚡ |
-
-### Parallel Processing
-
-| Document | Speedup |
-|:---------|:--------|
-| 10-page PDF | **5-8x faster** |
-| 50-page PDF | **10x faster** |
-| 100+ pages | **Linear scaling** with CPU cores |
-
-*Benchmarks vary based on PDF complexity and system resources.*
-
----
-
 ## 🏗️ Architecture
 
 ### Tech Stack
@@ -618,7 +640,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md)
 - [x] Absolute paths (v1.3.0)
 - [x] 94%+ test coverage (v1.3.0)
 
-**🚀 Coming Soon**
+**🚀 Next**
 - [ ] OCR for scanned PDFs
 - [ ] Annotation extraction
 - [ ] Form field extraction
@@ -631,15 +653,26 @@ Vote at [Discussions](https://github.com/SylphxAI/pdf-reader-mcp/discussions)
 
 ---
 
+## 🏆 Recognition
+
+**Featured on:**
+- [Smithery](https://smithery.ai/server/@sylphx/pdf-reader-mcp) - MCP directory
+- [Glama](https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp) - AI marketplace
+- [MseeP.ai](https://mseep.ai/app/SylphxAI-pdf-reader-mcp) - Security validated
+
+**Trusted worldwide** • **Enterprise adoption** • **Battle-tested**
+
+---
+
 ## 🤝 Support
 
-[![Issues](https://img.shields.io/github/issues/SylphxAI/pdf-reader-mcp?style=for-the-badge&logo=github)](https://github.com/SylphxAI/pdf-reader-mcp/issues)
-[![Discussions](https://img.shields.io/github/discussions/SylphxAI/pdf-reader-mcp?style=for-the-badge&logo=github)](https://github.com/SylphxAI/pdf-reader-mcp/discussions)
+[![GitHub Issues](https://img.shields.io/github/issues/SylphxAI/pdf-reader-mcp?style=flat-square)](https://github.com/SylphxAI/pdf-reader-mcp/issues)
+[![Discord](https://img.shields.io/discord/YOUR_DISCORD_ID?style=flat-square&logo=discord)](https://discord.gg/sylphx)
 
 - 🐛 [Bug Reports](https://github.com/SylphxAI/pdf-reader-mcp/issues)
 - 💬 [Discussions](https://github.com/SylphxAI/pdf-reader-mcp/discussions)
-- 📖 [Contributing](./CONTRIBUTING.md)
-- 📧 contact@sylphx.com
+- 📖 [Documentation](https://SylphxAI.github.io/pdf-reader-mcp/)
+- 📧 [Email](mailto:hi@sylphx.com)
 
 **Show Your Support:**
 ⭐ Star • 👀 Watch • 🐛 Report bugs • 💡 Suggest features • 🔀 Contribute
@@ -657,31 +690,29 @@ Vote at [Discussions](https://github.com/SylphxAI/pdf-reader-mcp/discussions)
 
 ---
 
-## 🏆 Recognition
-
-**Featured on:**
-- [Smithery](https://smithery.ai/server/@sylphx/pdf-reader-mcp) - MCP directory
-- [Glama](https://glama.ai/mcp/servers/@sylphx/pdf-reader-mcp) - AI marketplace
-- [MseeP.ai](https://mseep.ai/app/SylphxAI-pdf-reader-mcp) - Security validated
-
-**Trusted worldwide** • **Enterprise adoption** • **Battle-tested**
-
----
-
 ## 📄 License
 
-MIT License - Free for personal and commercial use.
-
-See [LICENSE](./LICENSE) for details.
+MIT © [Sylphx](https://sylphx.com)
 
 ---
 
-<div align="center">
+## 🙏 Credits
 
-**Built with ❤️ by [Sylphx](https://sylphx.com)**
+Built with:
+- [PDF.js](https://mozilla.github.io/pdf.js/) - Mozilla PDF engine
+- [MCP SDK](https://modelcontextprotocol.io) - Model Context Protocol
+- [Vitest](https://vitest.dev) - Fast testing framework
 
-*Building the future of AI-powered document processing*
+Special thanks to the open source community ❤️
 
-[⬆ Back to Top](#pdf-reader-mcp-)
+---
 
-</div>
+<p align="center">
+  <strong>5-10x faster. Production-ready. Battle-tested.</strong>
+  <br>
+  <sub>The PDF processing server that actually scales</sub>
+  <br><br>
+  <a href="https://sylphx.com">sylphx.com</a> •
+  <a href="https://x.com/SylphxAI">@SylphxAI</a> •
+  <a href="mailto:hi@sylphx.com">hi@sylphx.com</a>
+</p>

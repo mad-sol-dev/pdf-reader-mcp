@@ -6,9 +6,9 @@ This guide assumes you have an MCP client or host environment capable of launchi
 
 Ensure the server is launched with its **working directory set to the root of the project** containing the PDF files you want to access.
 
-- **If installed via npm/pnpm:** Your MCP host might manage this automatically via `npx @sylphlab/pdf-reader-mcp`.
+- **If installed via npm/pnpm:** Your MCP host might manage this automatically via `npx @sylphx/pdf-reader-mcp`.
 - **If running standalone:** `cd /path/to/your/project && node /path/to/pdf-reader-mcp/build/index.js`
-- **If using Docker:** `docker run -i --rm -v \"/path/to/your/project:/app\" sylphlab/pdf-reader-mcp:latest`
+- **If using Docker:** `docker run -i --rm -v \"/path/to/your/project:/app\" sylphx/pdf-reader-mcp:latest`
 
 ## 2. Using the `read_pdf` Tool
 

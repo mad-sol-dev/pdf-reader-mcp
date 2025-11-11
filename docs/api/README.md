@@ -1,5 +1,5 @@
-**@sylphlab/pdf-reader-mcp**
+**@sylphx/pdf-reader-mcp**
 
 ---
 
-# @sylphlab/pdf-reader-mcp
+# @sylphx/pdf-reader-mcp

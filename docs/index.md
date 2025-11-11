@@ -14,7 +14,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/sylphlab/pdf-reader-mcp
+      link: https://github.com/SylphxAI/pdf-reader-mcp
 
 features:
   - title: Secure Context

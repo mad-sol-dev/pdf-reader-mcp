@@ -58,8 +58,8 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/sylphlab/pdf-reader-mcp' },
-      { icon: 'issues', link: 'https://github.com/sylphlab/pdf-reader-mcp/issues' }, // Add link to issues
+      { icon: 'github', link: 'https://github.com/SylphxAI/pdf-reader-mcp' },
+      { icon: 'issues', link: 'https://github.com/SylphxAI/pdf-reader-mcp/issues' }, // Add link to issues
     ],
 
     footer: {
@@ -69,7 +69,7 @@ export default defineConfig({
 
     // Enable edit links
     editLink: {
-      pattern: 'https://github.com/sylphlab/pdf-reader-mcp/edit/main/docs/:path',
+      pattern: 'https://github.com/SylphxAI/pdf-reader-mcp/edit/main/docs/:path',
       text: 'Edit this page on GitHub',
     },
   },

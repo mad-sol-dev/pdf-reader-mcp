@@ -10,7 +10,7 @@
 To use the server in your project or MCP host environment, install it as a dependency:
 
 ```bash
-npm install @sylphlab/pdf-reader-mcp
+npm install @sylphx/pdf-reader-mcp
 ```
 
 ## Running Standalone (for testing/development)
@@ -18,7 +18,7 @@ npm install @sylphlab/pdf-reader-mcp
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/sylphlab/pdf-reader-mcp.git
+    git clone https://github.com/SylphxAI/pdf-reader-mcp.git
     cd pdf-reader-mcp
     ```
 
@@ -46,13 +46,13 @@ npm install @sylphlab/pdf-reader-mcp
 A Docker image is available on Docker Hub.
 
 ```bash
-docker pull sylphlab/pdf-reader-mcp:latest
+docker pull sylphx/pdf-reader-mcp:latest
 ```
 
 To run the container, you need to mount the project directory containing your PDFs into the container's working directory (`/app`):
 
 ```bash
-docker run -i --rm -v "/path/to/your/project:/app" sylphlab/pdf-reader-mcp:latest
+docker run -i --rm -v "/path/to/your/project:/app" sylphx/pdf-reader-mcp:latest
 ```
 
 Replace `/path/to/your/project` with the actual absolute path to your project folder.

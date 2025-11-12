@@ -40,7 +40,7 @@
     "tool"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "bunup",
     "watch": "tsc --watch",
     "inspector": "npx @modelcontextprotocol/inspector dist/index.js",
     "test": "vitest run",

@@ -34,36 +34,37 @@ describe('resolvePath Utility', () => {
     expect(resolvePath(userPath)).toBe(expectedPath);
   });
 
-  it('should allow path traversal with relative paths', () => {
+  it('should allow paths within home directory', () => {
+    // Paths that escape PROJECT_ROOT but stay within home directory should be allowed
     const userPath = '../outside/secret.txt';
-    const expectedPath = path.resolve(PROJECT_ROOT, userPath);
-    expect(resolvePath(userPath)).toBe(expectedPath);
+    // This should succeed as it's still within the home directory
+    const result = resolvePath(userPath);
+    expect(result).toBe(path.resolve(PROJECT_ROOT, userPath));
   });
 
-  it('should allow path traversal with multiple ".." components', () => {
-    // Construct a path that uses '..' many times
+  it('should block path traversal with multiple ".." components', () => {
+    // Construct a path that uses '..' many times to escape PROJECT_ROOT
     const levelsUp = PROJECT_ROOT.split(path.sep).filter(Boolean).length + 2; // Go up more levels than the root has
     const userPath = path.join(...(Array(levelsUp).fill('..') as string[]), 'secret.txt'); // Cast array to string[]
-    const expectedPath = path.resolve(PROJECT_ROOT, userPath);
-    expect(resolvePath(userPath)).toBe(expectedPath);
+    expect(() => resolvePath(userPath)).toThrow(McpError);
+    expect(() => resolvePath(userPath)).toThrow(
+      'Access denied: Path resolves outside allowed directories.'
+    );
   });
 
-  it('should accept absolute paths and return them normalized', () => {
-    const userPath = path.resolve(PROJECT_ROOT, 'absolute/file.txt'); // An absolute path
-    const userPathPosix = '/absolute/file.txt'; // POSIX style absolute path
-    const userPathWin = 'C:\\absolute\\file.txt'; // Windows style absolute path
-
-    // Should return the normalized absolute path
+  it('should accept absolute paths within allowed roots and return them normalized', () => {
+    // Test with path inside PROJECT_ROOT
+    const userPath = path.resolve(PROJECT_ROOT, 'absolute/file.txt');
     expect(resolvePath(userPath)).toBe(path.normalize(userPath));
+  });
 
-    // Test specifically for POSIX and Windows style absolute paths if needed
-    if (path.sep === '/') {
-      // POSIX-like
-      expect(resolvePath(userPathPosix)).toBe(path.normalize(userPathPosix));
-    } else {
-      // Windows-like
-      expect(resolvePath(userPathWin)).toBe(path.normalize(userPathWin));
-    }
+  it('should block absolute paths outside allowed roots', () => {
+    // Test with path outside allowed roots (e.g., /etc/passwd on Unix, C:\Windows\System32 on Windows)
+    const forbiddenPath = path.sep === '/' ? '/etc/passwd' : 'C:\\Windows\\System32\\config.txt';
+    expect(() => resolvePath(forbiddenPath)).toThrow(McpError);
+    expect(() => resolvePath(forbiddenPath)).toThrow(
+      'Access denied: Path resolves outside allowed directories.'
+    );
   });
 
   it('should throw McpError for non-string input', () => {

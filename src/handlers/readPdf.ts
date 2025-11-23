@@ -154,17 +154,24 @@ export const handleReadPdfFunc = async (
   const { sources, include_full_text, include_metadata, include_page_count, include_images } =
     parsedArgs;
 
-  // Process all sources concurrently
-  const results = await Promise.all(
-    sources.map((source) =>
-      processSingleSource(source, {
-        includeFullText: include_full_text,
-        includeMetadata: include_metadata,
-        includePageCount: include_page_count,
-        includeImages: include_images,
-      })
-    )
-  );
+  // Process sources with concurrency limit to prevent memory exhaustion
+  // Processing large PDFs concurrently can consume significant memory
+  const MAX_CONCURRENT_SOURCES = 3;
+  const results: PdfSourceResult[] = [];
+  const options = {
+    includeFullText: include_full_text,
+    includeMetadata: include_metadata,
+    includePageCount: include_page_count,
+    includeImages: include_images,
+  };
+
+  for (let i = 0; i < sources.length; i += MAX_CONCURRENT_SOURCES) {
+    const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES);
+    const batchResults = await Promise.all(
+      batch.map((source) => processSingleSource(source, options))
+    );
+    results.push(...batchResults);
+  }
 
   // Build content parts - start with structured JSON for backward compatibility
   const content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];

@@ -6,6 +6,10 @@ import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { resolvePath } from '../utils/pathUtils.js';
 
+// Maximum PDF file size: 100MB
+// Prevents memory exhaustion from loading extremely large files
+const MAX_PDF_SIZE = 100 * 1024 * 1024;
+
 /**
  * Load a PDF document from a local file path or URL
  * @param source - Object containing either path or url
@@ -22,6 +26,15 @@ export const loadPdfDocument = async (
     if (source.path) {
       const safePath = resolvePath(source.path);
       const buffer = await fs.readFile(safePath);
+
+      // Security: Check file size to prevent memory exhaustion
+      if (buffer.length > MAX_PDF_SIZE) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `PDF file exceeds maximum size of ${MAX_PDF_SIZE} bytes (${(MAX_PDF_SIZE / 1024 / 1024).toFixed(0)}MB). File size: ${buffer.length} bytes.`
+        );
+      }
+
       pdfDataSource = new Uint8Array(buffer);
     } else if (source.url) {
       pdfDataSource = { url: source.url };

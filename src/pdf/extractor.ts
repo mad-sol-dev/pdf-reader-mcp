@@ -248,9 +248,20 @@ const extractImagesFromPage = async (
 
           // Fallback to async callback-based get with timeout
           let resolved = false;
-          const timeout = setTimeout(() => {
+          let timeoutId: NodeJS.Timeout | null = null;
+
+          // Create a cleanup function to ensure resources are released
+          const cleanup = () => {
+            if (timeoutId !== null) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
+          };
+
+          timeoutId = setTimeout(() => {
             if (!resolved) {
               resolved = true;
+              cleanup();
               console.warn(
                 `[PDF Reader MCP] Image extraction timeout for ${imageName} on page ${String(pageNum)}`
               );
@@ -258,14 +269,27 @@ const extractImagesFromPage = async (
             }
           }, 10000); // 10 second timeout as a safety net
 
-          page.objs.get(imageName, (imageData: unknown) => {
+          try {
+            page.objs.get(imageName, (imageData: unknown) => {
+              if (!resolved) {
+                resolved = true;
+                cleanup();
+                const result = processImageData(imageData);
+                resolve(result);
+              }
+            });
+          } catch (error: unknown) {
+            // If get() throws synchronously, clean up and reject
             if (!resolved) {
               resolved = true;
-              clearTimeout(timeout);
-              const result = processImageData(imageData);
-              resolve(result);
+              cleanup();
+              const message = error instanceof Error ? error.message : String(error);
+              console.warn(
+                `[PDF Reader MCP] Error in async image get for ${imageName}: ${message}`
+              );
+              resolve(null);
             }
-          });
+          }
         })
     );
 
@@ -475,9 +499,20 @@ export const extractPageContent = async (
 
             // Fallback to async callback-based get with timeout
             let resolved = false;
-            const timeout = setTimeout(() => {
+            let timeoutId: NodeJS.Timeout | null = null;
+
+            // Create a cleanup function to ensure resources are released
+            const cleanup = () => {
+              if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+              }
+            };
+
+            timeoutId = setTimeout(() => {
               if (!resolved) {
                 resolved = true;
+                cleanup();
                 console.warn(
                   `[PDF Reader MCP] Image extraction timeout for ${imageName} on page ${String(pageNum)}`
                 );
@@ -485,14 +520,27 @@ export const extractPageContent = async (
               }
             }, 10000); // 10 second timeout as a safety net
 
-            page.objs.get(imageName, (imageData: unknown) => {
+            try {
+              page.objs.get(imageName, (imageData: unknown) => {
+                if (!resolved) {
+                  resolved = true;
+                  cleanup();
+                  const result = processImageData(imageData);
+                  resolve(result);
+                }
+              });
+            } catch (error: unknown) {
+              // If get() throws synchronously, clean up and reject
               if (!resolved) {
                 resolved = true;
-                clearTimeout(timeout);
-                const result = processImageData(imageData);
-                resolve(result);
+                cleanup();
+                const message = error instanceof Error ? error.message : String(error);
+                console.warn(
+                  `[PDF Reader MCP] Error in async image get for ${imageName}: ${message}`
+                );
+                resolve(null);
               }
-            });
+            }
           })
       );
 

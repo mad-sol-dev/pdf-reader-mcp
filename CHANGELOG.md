@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+### Patch Changes
+
+- c97a5c0: Refactor CI workflows to use company release standard. Simplified CI workflow for validation only and enhanced release workflow with full configuration.
+
 ## 1.3.1
 
 ### Patch Changes

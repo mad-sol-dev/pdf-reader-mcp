@@ -42,9 +42,13 @@ export const pdfRenderPage = tool()
   .handler(async ({ input }) => {
     const { source, page, scale } = input;
     const sourceDescription = source.path ?? source.url ?? 'unknown source';
+    const normalizedSource = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+    };
 
     try {
-      const result = await renderTargetPage(source, sourceDescription, page, scale);
+      const result = await renderTargetPage(normalizedSource, sourceDescription, page, scale);
       return [text(JSON.stringify(result.metadata, null, 2)), image(result.imageData, 'image/png')];
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

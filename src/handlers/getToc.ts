@@ -54,10 +54,20 @@ const flattenOutline = async (
 
   for (const item of outlineItems) {
     const page = await resolvePageNumber(pdfDocument, item.dest, sourceDescription);
-    items.push({ title: item.title ?? 'Untitled', page, depth: 0 });
+    const tocItem: PdfTocItem = {
+      title: item.title ?? 'Untitled',
+      depth: 0,
+      ...(page !== undefined ? { page } : {}),
+    };
+
+    items.push(tocItem);
 
     if (item.items && item.items.length > 0) {
-      const childItems = await flattenOutline(pdfDocument, item.items as OutlineEntry[], sourceDescription);
+      const childItems = await flattenOutline(
+        pdfDocument,
+        item.items as OutlineEntry[],
+        sourceDescription
+      );
       items.push(...childItems.map((child) => ({ ...child, depth: child.depth + 1 })));
     }
   }
@@ -73,7 +83,10 @@ const processToc = async (
   let result: PdfSourceTocResult = { source: sourceDescription, success: false };
 
   try {
-    const { pages: _pages, ...loadArgs } = source;
+    const loadArgs = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+    };
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
 
     const outline = await pdfDocument.getOutline();

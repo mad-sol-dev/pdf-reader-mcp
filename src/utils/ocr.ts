@@ -31,7 +31,7 @@ const handleHttpOcr = async (
   };
 
   if (provider.api_key) {
-    headers.Authorization = `Bearer ${provider.api_key}`;
+    headers['Authorization'] = `Bearer ${provider.api_key}`;
   }
 
   const response = await fetch(provider.endpoint, {

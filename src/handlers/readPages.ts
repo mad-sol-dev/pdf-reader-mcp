@@ -47,13 +47,13 @@ const processPage = async (
   const normalized = buildNormalizedPageText(items, {
     preserveWhitespace: options.preserveWhitespace,
     trimLines: options.trimLines,
-    maxCharsPerPage: options.maxCharsPerPage,
+    ...(options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}),
   });
 
   const pageEntry: PdfPageText = {
     page_number: pageNum,
     page_index: pageNum - 1,
-    page_label: pageLabel ?? undefined,
+    page_label: pageLabel ?? null,
     lines: normalized.lines,
     text: normalized.text,
   };
@@ -151,7 +151,10 @@ const processSourcePages = async (
 
   try {
     const targetPages = getTargetPages(source.pages, sourceDescription);
-    const { pages: _pages, ...loadArgs } = source;
+    const loadArgs = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+    };
 
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const totalPages = pdfDocument.numPages;
@@ -186,8 +189,8 @@ const processSourcePages = async (
       success: true,
       data: {
         pages,
-        warnings: warnings.length > 0 ? warnings : undefined,
-        truncated_pages: truncatedPages.length > 0 ? truncatedPages : undefined,
+        ...(warnings.length > 0 ? { warnings } : {}),
+        ...(truncatedPages.length > 0 ? { truncated_pages: truncatedPages } : {}),
       },
     };
   } catch (error: unknown) {
@@ -219,9 +222,9 @@ export const pdfReadPages = tool()
 
     const options: PageReadOptions = {
       includeImageIndexes: include_image_indexes ?? false,
-      maxCharsPerPage: max_chars_per_page,
       preserveWhitespace: preserve_whitespace ?? false,
       trimLines: trim_lines ?? true,
+      ...(max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}),
     };
 
     const MAX_CONCURRENT_SOURCES = 3;

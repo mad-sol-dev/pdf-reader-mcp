@@ -6,6 +6,7 @@ import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../util
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import { performOcr } from '../utils/ocr.js';
+import type { OcrProviderOptions } from '../utils/ocr.js';
 import { withPdfDocument } from '../utils/pdfLifecycle.js';
 
 const logger = createLogger('OcrPage');
@@ -86,14 +87,28 @@ export const pdfOcrPage = tool()
   .handler(async ({ input }) => {
     const { source, page, scale, provider, cache } = input;
     const sourceDescription = source.path ?? source.url ?? 'unknown source';
+    const providerOptions: OcrProviderOptions | undefined = provider
+      ? {
+          ...(provider.name ? { name: provider.name } : {}),
+          ...(provider.type === 'http' || provider.type === 'mock' ? { type: provider.type } : {}),
+          ...(provider.endpoint ? { endpoint: provider.endpoint } : {}),
+          ...(provider.api_key ? { api_key: provider.api_key } : {}),
+          ...(provider.model ? { model: provider.model } : {}),
+          ...(provider.language ? { language: provider.language } : {}),
+          ...(provider.extras ? { extras: provider.extras } : {}),
+        }
+      : undefined;
 
     try {
       const result = await performPageOcr(
-        source,
+        {
+          ...(source.path ? { path: source.path } : {}),
+          ...(source.url ? { url: source.url } : {}),
+        },
         sourceDescription,
         page,
         scale,
-        provider,
+        providerOptions,
         cache !== false
       );
       return [text(JSON.stringify(result, null, 2))];

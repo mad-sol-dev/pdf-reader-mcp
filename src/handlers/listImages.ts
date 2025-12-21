@@ -16,7 +16,7 @@ const MAX_CONCURRENT_SOURCES = 3;
 const summarizeImages = (images: PdfImageInfo[], warnings: string[]) => ({
   images,
   total_images: images.length,
-  warnings: warnings.length > 0 ? warnings : undefined,
+  ...(warnings.length > 0 ? { warnings } : {}),
 });
 
 const collectImages = async (
@@ -24,7 +24,10 @@ const collectImages = async (
   sourceDescription: string,
   allowFullDocument: boolean
 ): Promise<PdfImageListResult> => {
-  const { pages: _pages, ...loadArgs } = source;
+  const loadArgs = {
+    ...(source.path ? { path: source.path } : {}),
+    ...(source.url ? { url: source.url } : {}),
+  };
 
   return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
     const totalPages = pdfDocument.numPages;
@@ -83,7 +86,11 @@ export const pdfListImages = tool()
       const batchResults = await Promise.all(
         batch.map((source) =>
           collectImages(
-            source,
+            {
+              ...(source.path ? { path: source.path } : {}),
+              ...(source.url ? { url: source.url } : {}),
+              ...(source.pages !== undefined ? { pages: source.pages } : {}),
+            },
             source.path ?? source.url ?? 'unknown source',
             allow_full_document ?? false
           )

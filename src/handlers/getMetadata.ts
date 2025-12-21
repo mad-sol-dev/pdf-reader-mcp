@@ -4,11 +4,7 @@ import { extractMetadataAndPageCount } from '../pdf/extractor.js';
 import { loadPdfDocument } from '../pdf/loader.js';
 import { getMetadataArgsSchema } from '../schemas/getMetadata.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
-import type {
-  PdfMetadataSummary,
-  PdfSourceMetadataResult,
-  PdfSourceResult,
-} from '../types/pdf.js';
+import type { PdfMetadataSummary, PdfSourceMetadataResult, PdfSourceResult } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('GetMetadata');
@@ -27,7 +23,10 @@ const processMetadata = async (
   let result: PdfSourceMetadataResult = { source: sourceDescription, success: false };
 
   try {
-    const { pages: _pages, ...loadArgs } = source;
+    const loadArgs = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+    };
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const metadata = await extractMetadataAndPageCount(
       pdfDocument,
@@ -67,10 +66,10 @@ const processMetadata = async (
 
     const metadataSummary: PdfMetadataSummary = {
       ...metadata,
-      fingerprint,
-      has_page_labels: hasPageLabels,
-      has_outline: hasOutline,
-      sample_page_labels: samplePageLabels,
+      ...(fingerprint ? { fingerprint } : {}),
+      ...(hasPageLabels !== undefined ? { has_page_labels: hasPageLabels } : {}),
+      ...(hasOutline !== undefined ? { has_outline: hasOutline } : {}),
+      ...(samplePageLabels ? { sample_page_labels: samplePageLabels } : {}),
     };
 
     result = { source: sourceDescription, success: true, data: metadataSummary };
@@ -99,7 +98,8 @@ export const pdfGetMetadata = tool()
   .description('Retrieves document metadata and basic info for one or more PDFs.')
   .input(getMetadataArgsSchema)
   .handler(async ({ input }) => {
-    const { sources, include_metadata, include_page_count, include_page_labels, include_outline } = input;
+    const { sources, include_metadata, include_page_count, include_page_labels, include_outline } =
+      input;
     const includeMetadata = include_metadata ?? true;
     const includePageCount = include_page_count ?? true;
     const includePageLabels = include_page_labels ?? true;

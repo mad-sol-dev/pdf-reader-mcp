@@ -47,7 +47,10 @@ const processSourceStats = async (
   includeImages: boolean,
   allowFullDocument: boolean
 ): Promise<PdfSourcePageStatsResult> => {
-  const { pages: _pages, ...loadArgs } = source;
+  const loadArgs = {
+    ...(source.path ? { path: source.path } : {}),
+    ...(source.url ? { url: source.url } : {}),
+  };
 
   return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
     const targetPages = getTargetPages(source.pages, sourceDescription);

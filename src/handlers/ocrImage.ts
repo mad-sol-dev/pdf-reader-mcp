@@ -3,6 +3,7 @@ import { extractImages } from '../pdf/extractor.js';
 import { ocrImageArgsSchema } from '../schemas/ocr.js';
 import type { OcrResult } from '../types/pdf.js';
 import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
+import type { OcrProviderOptions } from '../utils/ocr.js';
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import { performOcr } from '../utils/ocr.js';
@@ -90,14 +91,28 @@ export const pdfOcrImage = tool()
   .handler(async ({ input }) => {
     const { source, page, index, provider, cache } = input;
     const sourceDescription = source.path ?? source.url ?? 'unknown source';
+    const providerOptions: OcrProviderOptions | undefined = provider
+      ? {
+          ...(provider.name ? { name: provider.name } : {}),
+          ...(provider.type === 'http' || provider.type === 'mock' ? { type: provider.type } : {}),
+          ...(provider.endpoint ? { endpoint: provider.endpoint } : {}),
+          ...(provider.api_key ? { api_key: provider.api_key } : {}),
+          ...(provider.model ? { model: provider.model } : {}),
+          ...(provider.language ? { language: provider.language } : {}),
+          ...(provider.extras ? { extras: provider.extras } : {}),
+        }
+      : undefined;
 
     try {
       const result = await performImageOcr(
-        source,
+        {
+          ...(source.path ? { path: source.path } : {}),
+          ...(source.url ? { url: source.url } : {}),
+        },
         sourceDescription,
         page,
         index,
-        provider,
+        providerOptions,
         cache !== false
       );
       return [text(JSON.stringify(result, null, 2))];

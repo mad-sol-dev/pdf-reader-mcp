@@ -48,9 +48,10 @@ export const renderPageToPng = async (
 
   const renderContext = {
     canvasContext: context,
+    canvas: null,
     viewport,
     canvasFactory,
-  } satisfies pdfjsLib.PDFRenderParameters;
+  } as Parameters<pdfjsLib.PDFPageProxy['render']>[0];
 
   try {
     await page.render(renderContext).promise;

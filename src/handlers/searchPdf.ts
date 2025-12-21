@@ -127,7 +127,9 @@ const collectPageHits = async (
     const normalized = buildNormalizedPageText(items, {
       preserveWhitespace: options.preserveWhitespace,
       trimLines: options.trimLines,
-      maxCharsPerPage: options.maxCharsPerPage,
+      ...(options.maxCharsPerPage !== undefined
+        ? { maxCharsPerPage: options.maxCharsPerPage }
+        : {}),
     });
 
     if (normalized.truncated) {
@@ -154,7 +156,7 @@ const collectPageHits = async (
       return {
         page_number: pageNum,
         page_index: pageNum - 1,
-        page_label: pageLabels?.[pageNum - 1] ?? undefined,
+        page_label: pageLabels?.[pageNum - 1] ?? null,
         match: match.match,
         ...segments,
       };
@@ -193,7 +195,10 @@ const processSearchSource = async (
 
   try {
     const targetPages = getTargetPages(source.pages, sourceDescription);
-    const { pages: _pages, ...loadArgs } = source;
+    const loadArgs = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+    };
 
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const totalPages = pdfDocument.numPages;
@@ -226,8 +231,8 @@ const processSearchSource = async (
       data: {
         hits,
         total_hits: hits.length,
-        warnings: warnings.length > 0 ? warnings : undefined,
-        truncated_pages: truncatedPages.length > 0 ? truncatedPages : undefined,
+        ...(warnings.length > 0 ? { warnings } : {}),
+        ...(truncatedPages.length > 0 ? { truncated_pages: truncatedPages } : {}),
       },
     };
   } catch (error: unknown) {
@@ -268,9 +273,9 @@ export const pdfSearch = tool()
       caseSensitive: case_sensitive ?? false,
       contextChars: context_chars ?? 60,
       maxHits: max_hits ?? 20,
-      maxCharsPerPage: max_chars_per_page,
       preserveWhitespace: preserve_whitespace ?? false,
       trimLines: trim_lines ?? true,
+      ...(max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}),
     };
 
     if (baseOptions.useRegex) {

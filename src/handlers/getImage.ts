@@ -37,7 +37,10 @@ const fetchImage = async (
   page: number,
   index: number
 ): Promise<{ metadata: object; imageData: string }> => {
-  const { pages: _pages, ...loadArgs } = source;
+  const loadArgs = {
+    ...(source.path ? { path: source.path } : {}),
+    ...(source.url ? { url: source.url } : {}),
+  };
   return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
     const totalPages = pdfDocument.numPages;
 
@@ -74,8 +77,14 @@ export const pdfGetImage = tool()
     const { source, page, index } = input;
     const sourceDescription = source.path ?? source.url ?? 'unknown source';
 
+    const normalizedSource: { path?: string; url?: string; pages?: string | number[] } = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+      ...(source.pages !== undefined ? { pages: source.pages } : {}),
+    };
+
     try {
-      const result = await fetchImage(source, sourceDescription, page, index);
+      const result = await fetchImage(normalizedSource, sourceDescription, page, index);
       return [text(JSON.stringify(result.metadata, null, 2)), image(result.imageData, 'image/png')];
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

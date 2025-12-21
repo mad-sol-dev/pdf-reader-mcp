@@ -1,121 +1,74 @@
 # Getting Started
 
-Once installed, the PDF Reader MCP server provides a single tool: `read_pdf`.
+The PDF Reader MCP server ships a focused toolkit of specialized tools instead of a single monolithic extractor. Use the quick-start workflow below to orient yourself, then pick the tool that best matches your task with the sample inputs/outputs provided.
 
-## Basic Usage
+## Quick start workflow
 
-### Get Metadata and Page Count
+1. **Probe the document** with `pdf_get_metadata` to learn page counts, page labels, and whether a TOC exists.
+2. **Map the structure** using `pdf_get_toc` and `pdf_get_page_stats` to find text-heavy or image-heavy sections before pulling pages.
+3. **Extract content** with `pdf_read_pages` (text), `pdf_search` (keyword/regex), `pdf_render_page` (raster), or `pdf_get_image` (embedded image).
+4. **Run OCR when needed** via `pdf_ocr_page` or `pdf_ocr_image`, leaning on built-in caches for repeat calls.
+5. **Inspect or reset caches** with `pdf_cache_stats` and `pdf_cache_clear`.
 
-```json
-{
-  "sources": [{ "path": "/path/to/document.pdf" }],
-  "include_full_text": false,
-  "include_metadata": true,
-  "include_page_count": true,
-  "include_images": false
-}
-```
+> Looking for design rationale? See the [Design Philosophy](../design/index.md#design-philosophy) page for how these tools align with the core principles.
 
-### Get Full Text
+## Tool-by-tool examples
 
-```json
-{
-  "sources": [{ "path": "/path/to/document.pdf" }],
-  "include_full_text": true,
-  "include_metadata": false,
-  "include_page_count": false,
-  "include_images": false
-}
-```
+### Metadata & navigation
 
-### Get Specific Pages
+**`pdf_get_metadata` — document probe**
 
-```json
-{
-  "sources": [{
-    "path": "/path/to/document.pdf",
-    "pages": [1, 3, 5]
-  }],
-  "include_full_text": false,
-  "include_metadata": false,
-  "include_page_count": false,
-  "include_images": false
-}
-```
-
-Or use page ranges:
-
-```json
-{
-  "sources": [{
-    "path": "/path/to/document.pdf",
-    "pages": "1-5, 10, 15-20"
-  }],
-  "include_full_text": false,
-  "include_metadata": false,
-  "include_page_count": false,
-  "include_images": false
-}
-```
-
-### Extract Images
-
-```json
-{
-  "sources": [{ "path": "/path/to/document.pdf" }],
-  "include_full_text": false,
-  "include_metadata": false,
-  "include_page_count": false,
-  "include_images": true
-}
-```
-
-## Multiple Sources
-
-Process multiple PDFs in a single request:
+Minimal request to gather metadata, page count, page labels, and outline presence:
 
 ```json
 {
   "sources": [
-    { "path": "/path/to/report.pdf" },
-    { "path": "/path/to/invoice.pdf" },
-    { "url": "https://example.com/whitepaper.pdf" }
-  ],
-  "include_full_text": true,
-  "include_metadata": true,
-  "include_page_count": true,
-  "include_images": false
+    { "path": "./docs/report.pdf" }
+  ]
 }
 ```
 
-## Response Format
+Output highlights per source:
 
 ```json
 {
   "results": [
     {
-      "source": "/path/to/document.pdf",
+      "source": "./docs/report.pdf",
       "success": true,
       "data": {
-        "num_pages": 10,
-        "info": {
-          "Title": "Document Title",
-          "Author": "Author Name",
-          "CreationDate": "D:20231201120000"
-        },
-        "metadata": { ... },
-        "page_texts": [
-          { "page": 1, "text": "Page 1 content..." },
-          { "page": 2, "text": "Page 2 content..." }
-        ],
-        "images": [
-          {
-            "page": 1,
-            "index": 0,
-            "width": 800,
-            "height": 600,
-            "data": "data:image/png;base64,..."
-          }
+        "num_pages": 42,
+        "info": { "Title": "Quarterly Report" },
+        "metadata": { "custom:tag": "finance" },
+        "has_page_labels": true,
+        "sample_page_labels": ["i", "ii", "1", "2"],
+        "has_outline": true
+      }
+    }
+  ]
+}
+```
+
+**`pdf_get_toc` — flattened table of contents**
+
+```json
+{
+  "sources": [{ "path": "./docs/report.pdf" }]
+}
+```
+
+Returns `toc` entries with depth and resolved page numbers:
+
+```json
+{
+  "results": [
+    {
+      "data": {
+        "has_outline": true,
+        "toc": [
+          { "title": "Executive Summary", "page": 1, "depth": 0 },
+          { "title": "Financials", "page": 5, "depth": 0 },
+          { "title": "Q1", "page": 6, "depth": 1 }
         ]
       }
     }
@@ -123,23 +76,124 @@ Process multiple PDFs in a single request:
 }
 ```
 
-## Error Handling
+**`pdf_get_page_stats` — length & density preview**
 
-If a source fails, it will be included in results with `success: false`:
+```json
+{
+  "sources": [{ "path": "./docs/report.pdf" }],
+  "include_images": true
+}
+```
+
+Outputs character counts and image counts per page so you can prioritize heavy sections:
 
 ```json
 {
   "results": [
     {
-      "source": "/path/to/missing.pdf",
-      "success": false,
-      "error": {
-        "code": "FileNotFound",
-        "message": "File not found: /path/to/missing.pdf"
+      "data": {
+        "num_pages": 42,
+        "page_stats": [
+          { "page": 1, "text_length": 1200, "image_count": 0, "has_text": true, "has_images": false },
+          { "page": 5, "text_length": 400, "image_count": 2, "has_text": true, "has_images": true }
+        ]
       }
     }
   ]
 }
 ```
 
-Other sources in the same request will still be processed.
+### Reading & search
+
+**`pdf_read_pages` — structured text with optional image references**
+
+```json
+{
+  "sources": [
+    { "path": "./docs/report.pdf", "pages": "1-3, 10" }
+  ],
+  "include_image_indexes": true,
+  "preserve_whitespace": false,
+  "trim_lines": true
+}
+```
+
+Each page includes ordered `lines`, combined `text`, optional `page_label`, and any `image_indexes` present on that page.
+
+**`pdf_search` — regex or plain-text matches with context**
+
+```json
+{
+  "sources": [{ "path": "./docs/report.pdf" }],
+  "query": "revenue",
+  "context_chars": 80,
+  "max_hits": 5
+}
+```
+
+Results return page indexes/labels plus `match` text and `context_before`/`context_after` strings.
+
+### Images & OCR
+
+**`pdf_list_images` — enumerate embedded images**
+
+```json
+{
+  "sources": [{ "path": "./docs/report.pdf", "pages": "5,7-8" }]
+}
+```
+
+Responds with `images` entries like `{ "page": 5, "index": 0, "width": 1200, "height": 900, "format": "png" }` without base64 payloads.
+
+**`pdf_get_image` — fetch a single embedded image**
+
+```json
+{
+  "source": { "path": "./docs/report.pdf" },
+  "page": 5,
+  "index": 0
+}
+```
+
+Returns JSON metadata plus a PNG part containing the image data.
+
+**`pdf_render_page` — rasterize a page for vision tasks**
+
+```json
+{
+  "source": { "path": "./docs/report.pdf" },
+  "page": 5,
+  "scale": 1.5
+}
+```
+
+Responds with page dimensions, scale, fingerprint, and a PNG part for the rendered page.
+
+**`pdf_ocr_page` — OCR a rendered page with caching**
+
+```json
+{
+  "source": { "path": "./docs/report.pdf" },
+  "page": 5,
+  "scale": 1.5,
+  "provider": { "type": "openai", "model": "gpt-4o-mini" },
+  "cache": true
+}
+```
+
+Outputs OCR `text`, provider info, whether it came `from_cache`, and page identifiers. Use `pdf_ocr_image` similarly when you already know the image index.
+
+### Cache management
+
+Inspect cache state or clear scopes between runs:
+
+```json
+{ "scope": "all" }
+```
+
+- `pdf_cache_stats` returns text/OCR cache counts and keys.
+- `pdf_cache_clear` accepts `scope: "text" | "ocr" | "all"` and reports which caches were flushed.
+
+### Compatibility tool
+
+`read_pdf` remains available for legacy clients that expect a single payload containing `full_text` or `page_texts`, `metadata`, `num_pages`, optional `images`, and `warnings`. Prefer the specialized tools above for new integrations.

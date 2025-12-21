@@ -68,29 +68,15 @@ class Logger {
     logMessage: string,
     structuredLog: Record<string, unknown>
   ): void {
-    if (level === 'error') {
-      console.error(logMessage);
+    console.error(logMessage);
+
+    if (level === 'error' || level === 'warn') {
       console.error(JSON.stringify(structuredLog));
-    } else if (level === 'warn') {
-      console.warn(logMessage);
-      console.warn(JSON.stringify(structuredLog));
-    } else if (level === 'info') {
-      console.info(logMessage);
-    } else {
-      console.log(logMessage);
     }
   }
 
   private logSimple(level: string, logMessage: string): void {
-    if (level === 'error') {
-      console.error(logMessage);
-    } else if (level === 'warn') {
-      console.warn(logMessage);
-    } else if (level === 'info') {
-      console.info(logMessage);
-    } else {
-      console.log(logMessage);
-    }
+    console.error(logMessage);
   }
 
   private log(level: string, message: string, context?: LogContext): void {

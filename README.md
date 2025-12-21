@@ -747,8 +747,8 @@ Restart MCP client completely.
 | **Validation** | Zod + JSON Schema |
 | **Protocol** | MCP SDK |
 | **Language** | TypeScript (strict) |
-| **Testing** | Vitest (103 tests) |
-| **Quality** | Biome (50x faster) |
+| **Testing** | Bun + Vitest |
+| **Quality** | Biome |
 | **CI/CD** | GitHub Actions |
 
 ### Design Principles
@@ -772,31 +772,30 @@ Restart MCP client completely.
 
 **Prerequisites:**
 - Node.js >= 22.0.0
-- pnpm (recommended) or npm
+- Bun 1.3.x (matches CI) - install from https://bun.sh to mirror GitHub Actions
 
 **Setup:**
 ```bash
 git clone https://github.com/SylphxAI/pdf-reader-mcp.git
 cd pdf-reader-mcp
-pnpm install && pnpm build
+bun install && bun run build
 ```
 
 **Scripts:**
 ```bash
-pnpm run build       # Build TypeScript
-pnpm run test        # Run 103 tests
-pnpm run test:cov    # Coverage (94%+)
-pnpm run check       # Lint + format
-pnpm run check:fix   # Auto-fix
-pnpm run benchmark   # Performance tests
+bun run build       # Build TypeScript
+bun run test        # Run test suite
+bun run test:cov    # Coverage report
+bun run check       # Lint + format
+bun run check:fix   # Auto-fix
+bun run benchmark   # Performance tests
 ```
 
 **Quality:**
-- ✅ 103 tests
-- ✅ 94%+ coverage
-- ✅ 98%+ function coverage
-- ✅ Zero lint errors
-- ✅ Strict TypeScript
+- ✅ Comprehensive tests via Bun + Vitest
+- ✅ High coverage enforced in CI
+- ✅ Automated linting and formatting with Biome
+- ✅ Strict TypeScript configuration
 
 </details>
 
@@ -808,8 +807,8 @@ pnpm run benchmark   # Performance tests
 **Quick Start:**
 1. Fork repository
 2. Create branch: `git checkout -b feature/awesome`
-3. Make changes: `pnpm test`
-4. Format: `pnpm run check:fix`
+3. Make changes: `bun run test`
+4. Format: `bun run check:fix`
 5. Commit: Use [Conventional Commits](https://www.conventionalcommits.org/)
 6. Open PR
 

@@ -21,14 +21,15 @@ const resolveTargetPages = (
   sourcePages: string | number[] | undefined,
   sourceDescription: string,
   page: number
-): number[] => {
-  const targetPages = getTargetPages(sourcePages, sourceDescription) ?? [];
+) => {
+  const targetPages = getTargetPages(sourcePages, sourceDescription);
+  const pages = targetPages.pages ? [...targetPages.pages] : [];
 
-  if (!targetPages.includes(page)) {
-    targetPages.push(page);
+  if (!pages.includes(page)) {
+    pages.push(page);
   }
 
-  return targetPages;
+  return { ...targetPages, pages };
 };
 
 const fetchImage = async (
@@ -48,7 +49,7 @@ const fetchImage = async (
       throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
     }
 
-    const { pagesToProcess, invalidPages } = determinePagesToProcess(
+    const { pagesToProcess, invalidPages, rangeWarnings } = determinePagesToProcess(
       resolveTargetPages(source.pages, sourceDescription, page),
       totalPages,
       false
@@ -65,7 +66,7 @@ const fetchImage = async (
       throw new Error(`Image with index ${index} not found on page ${page}.`);
     }
 
-    const warnings = buildWarnings(invalidPages, totalPages);
+    const warnings = [...(rangeWarnings ?? []), ...buildWarnings(invalidPages, totalPages)];
     return { metadata: buildImageMetadata(targetImage, warnings), imageData: targetImage.data };
   });
 };

@@ -219,7 +219,7 @@ const processSearchSource = async (
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const totalPages = pdfDocument.numPages;
 
-    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
+    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(
       targetPages,
       totalPages,
       true,
@@ -237,6 +237,7 @@ const processSearchSource = async (
     );
 
     const warnings = [
+      ...(rangeWarnings ?? []),
       ...buildWarnings(invalidPages, totalPages),
       ...(guardWarning ? [guardWarning] : []),
     ];

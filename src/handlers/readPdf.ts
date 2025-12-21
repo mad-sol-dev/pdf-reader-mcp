@@ -52,7 +52,7 @@ const processSingleSource = async (
     const output: PdfResultData = { ...metadataOutput };
 
     // Determine pages to process
-    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
+    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(
       targetPages,
       totalPages,
       options.includeFullText,
@@ -63,6 +63,7 @@ const processSingleSource = async (
 
     // Add warnings for invalid pages
     const warnings = [
+      ...(rangeWarnings ?? []),
       ...buildWarnings(invalidPages, totalPages),
       ...(guardWarning ? [guardWarning] : []),
     ];
@@ -112,7 +113,7 @@ const processSingleSource = async (
           .join(''),
       }));
 
-      if (targetPages) {
+      if (targetPages.pages) {
         // Specific pages requested
         output.page_texts = extractedPageTexts;
       } else {

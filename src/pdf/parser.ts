@@ -10,7 +10,7 @@ export const DEFAULT_SAMPLE_PAGE_LIMIT = 5;
 /**
  * Parse a single range part (e.g., "1-3", "5", "7-")
  */
-const parseRangePart = (part: string, pages: Set<number>): void => {
+const parseRangePart = (part: string, pages: Set<number>): string | undefined => {
   const trimmedPart = part.trim();
 
   if (trimmedPart.includes('-')) {
@@ -32,6 +32,7 @@ const parseRangePart = (part: string, pages: Set<number>): void => {
 
     if (end === Infinity && practicalEnd === start + MAX_RANGE_SIZE) {
       logger.warn('Open-ended range truncated', { start, practicalEnd });
+      return `Open-ended page range starting at ${start} was truncated at ${practicalEnd} to cap open ranges.`;
     }
   } else {
     const page = parseInt(trimmedPart, 10);
@@ -40,6 +41,8 @@ const parseRangePart = (part: string, pages: Set<number>): void => {
     }
     pages.add(page);
   }
+
+  return undefined;
 };
 
 /**
@@ -47,12 +50,21 @@ const parseRangePart = (part: string, pages: Set<number>): void => {
  * @param ranges - Range string (e.g., "1-3,5,7-10")
  * @returns Sorted array of unique page numbers
  */
-export const parsePageRanges = (ranges: string): number[] => {
+export interface ParsedPageRanges {
+  pages: number[];
+  warnings: string[];
+}
+
+export const parsePageRanges = (ranges: string): ParsedPageRanges => {
   const pages = new Set<number>();
   const parts = ranges.split(',');
+  const warnings: string[] = [];
 
   for (const part of parts) {
-    parseRangePart(part, pages);
+    const warning = parseRangePart(part, pages);
+    if (warning) {
+      warnings.push(warning);
+    }
   }
 
   // This should never happen as parseRangePart would have thrown an error
@@ -62,7 +74,7 @@ export const parsePageRanges = (ranges: string): number[] => {
     throw new Error('Page range string resulted in zero valid pages.');
   }
 
-  return Array.from(pages).sort((a, b) => a - b);
+  return { pages: Array.from(pages).sort((a, b) => a - b), warnings };
 };
 
 /**
@@ -71,12 +83,17 @@ export const parsePageRanges = (ranges: string): number[] => {
  * @param sourceDescription - Description for error messages
  * @returns Array of page numbers or undefined
  */
+export interface TargetPagesResult {
+  pages: number[] | undefined;
+  warnings: string[];
+}
+
 export const getTargetPages = (
   sourcePages: string | number[] | undefined,
   sourceDescription: string
-): number[] | undefined => {
+): TargetPagesResult => {
   if (!sourcePages) {
-    return undefined;
+    return { pages: undefined, warnings: [] };
   }
 
   try {
@@ -94,7 +111,7 @@ export const getTargetPages = (
       throw new Error('Page specification resulted in an empty set of pages.');
     }
 
-    return uniquePages;
+    return { pages: uniquePages, warnings: [] };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     throw new PdfError(
@@ -117,18 +134,21 @@ export interface DeterminePagesResult {
   invalidPages: number[];
   guardWarning?: string;
   sampledFromFullDocument?: boolean;
+  rangeWarnings?: string[];
 }
 
 export const determinePagesToProcess = (
-  targetPages: number[] | undefined,
+  targetPages: TargetPagesResult,
   totalPages: number,
   includeFullText: boolean,
   options?: DeterminePagesOptions
 ): DeterminePagesResult => {
-  if (targetPages) {
-    const pagesToProcess = targetPages.filter((p) => p <= totalPages);
-    const invalidPages = targetPages.filter((p) => p > totalPages);
-    return { pagesToProcess, invalidPages };
+  const { pages, warnings: rangeWarnings } = targetPages;
+
+  if (pages) {
+    const pagesToProcess = pages.filter((p) => p <= totalPages);
+    const invalidPages = pages.filter((p) => p > totalPages);
+    return { pagesToProcess, invalidPages, rangeWarnings };
   }
 
   const allowFullDocument = options?.allowFullDocument ?? includeFullText;

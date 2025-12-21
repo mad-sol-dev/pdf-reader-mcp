@@ -25,6 +25,7 @@ const processSingleSource = async (
     includeMetadata: boolean;
     includePageCount: boolean;
     includeImages: boolean;
+    allowFullDocument: boolean;
   }
 ): Promise<PdfSourceResult> => {
   const MAX_CONCURRENT_PAGES = 5;
@@ -51,14 +52,20 @@ const processSingleSource = async (
     const output: PdfResultData = { ...metadataOutput };
 
     // Determine pages to process
-    const { pagesToProcess, invalidPages } = determinePagesToProcess(
+    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
       targetPages,
       totalPages,
-      options.includeFullText
+      options.includeFullText,
+      {
+        allowFullDocument: options.allowFullDocument,
+      }
     );
 
     // Add warnings for invalid pages
-    const warnings = buildWarnings(invalidPages, totalPages);
+    const warnings = [
+      ...buildWarnings(invalidPages, totalPages),
+      ...(guardWarning ? [guardWarning] : []),
+    ];
     if (warnings.length > 0) {
       output.warnings = warnings;
     }
@@ -162,8 +169,14 @@ export const readPdf = tool()
   )
   .input(readPdfArgsSchema)
   .handler(async ({ input }) => {
-    const { sources, include_full_text, include_metadata, include_page_count, include_images } =
-      input;
+    const {
+      sources,
+      include_full_text,
+      include_metadata,
+      include_page_count,
+      include_images,
+      allow_full_document,
+    } = input;
 
     // Process sources with concurrency limit to prevent memory exhaustion
     // Processing large PDFs concurrently can consume significant memory
@@ -174,6 +187,7 @@ export const readPdf = tool()
       includeMetadata: include_metadata ?? true,
       includePageCount: include_page_count ?? true,
       includeImages: include_images ?? false,
+      allowFullDocument: allow_full_document ?? false,
     };
 
     for (let i = 0; i < sources.length; i += MAX_CONCURRENT_SOURCES) {

@@ -185,7 +185,8 @@ const destroyPdfDocument = async (
 const processSearchSource = async (
   source: PdfSource,
   sourceDescription: string,
-  options: SearchOptions
+  options: SearchOptions,
+  allowFullDocument: boolean
 ): Promise<PdfSourceSearchResult> => {
   let pdfDocument: pdfjsLib.PDFDocumentProxy | null = null;
   let result: PdfSourceSearchResult = { source: sourceDescription, success: false };
@@ -197,7 +198,14 @@ const processSearchSource = async (
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const totalPages = pdfDocument.numPages;
 
-    const { pagesToProcess, invalidPages } = determinePagesToProcess(targetPages, totalPages, true);
+    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
+      targetPages,
+      totalPages,
+      true,
+      {
+        allowFullDocument,
+      }
+    );
     const pageLabels = await getPageLabelsSafe(pdfDocument, sourceDescription);
     const { hits, truncatedPages } = await collectPageHits(
       pdfDocument,
@@ -207,7 +215,10 @@ const processSearchSource = async (
       options
     );
 
-    const warnings = buildWarnings(invalidPages, totalPages);
+    const warnings = [
+      ...buildWarnings(invalidPages, totalPages),
+      ...(guardWarning ? [guardWarning] : []),
+    ];
 
     result = {
       source: sourceDescription,
@@ -248,6 +259,7 @@ export const pdfSearch = tool()
       max_chars_per_page,
       preserve_whitespace,
       trim_lines,
+      allow_full_document,
     } = input;
 
     const baseOptions: SearchOptions = {
@@ -281,10 +293,15 @@ export const pdfSearch = tool()
       const batchResults = await Promise.all(
         batch.map((source) => {
           const sourceDescription = source.path ?? source.url ?? 'unknown source';
-          return processSearchSource(source, sourceDescription, {
-            ...baseOptions,
-            maxHits: remainingHits,
-          });
+          return processSearchSource(
+            source,
+            sourceDescription,
+            {
+              ...baseOptions,
+              maxHits: remainingHits,
+            },
+            allow_full_document ?? false
+          );
         })
       );
 

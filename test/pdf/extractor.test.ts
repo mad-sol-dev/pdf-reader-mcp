@@ -193,8 +193,6 @@ describe('extractor', () => {
     });
 
     it('processes pages in batches to avoid unbounded work on large documents', async () => {
-      vi.useFakeTimers();
-
       let activeRequests = 0;
       let maxConcurrentRequests = 0;
 
@@ -209,28 +207,21 @@ describe('extractor', () => {
           activeRequests++;
           maxConcurrentRequests = Math.max(maxConcurrentRequests, activeRequests);
 
-          return new Promise((resolve) =>
+          return new Promise((resolve) => {
             setTimeout(() => {
               activeRequests--;
               resolve(mockPage);
-            }, 10)
-          );
+            }, 5);
+          });
         }),
       } as unknown as pdfjsLib.PDFDocumentProxy;
 
       const pages = Array.from({ length: 10 }, (_, idx) => idx + 1);
 
-      try {
-        const extractionPromise = extractPageTexts(mockDocument, pages, 'large.pdf');
+      const result = await extractPageTexts(mockDocument, pages, 'large.pdf');
 
-        await vi.runAllTimersAsync();
-        const result = await extractionPromise;
-
-        expect(maxConcurrentRequests).toBeLessThanOrEqual(6);
-        expect(result).toHaveLength(10);
-      } finally {
-        vi.useRealTimers();
-      }
+      expect(maxConcurrentRequests).toBeLessThanOrEqual(6);
+      expect(result).toHaveLength(10);
     });
   });
 

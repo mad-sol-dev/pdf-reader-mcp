@@ -29,9 +29,11 @@ vi.mock('../../src/pdf/loader.js', () => ({
 }));
 
 vi.mock('../../src/pdf/extractor.js', async () => {
-  const actual = await vi.importActual<typeof import('../../src/pdf/extractor.js')>('../../src/pdf/extractor.js');
   return {
-    ...actual,
+    buildWarnings: (invalidPages: number[], totalPages: number) => {
+      if (invalidPages.length === 0) return [];
+      return [`Requested page numbers ${invalidPages.join(', ')} exceed total pages (${String(totalPages)}).`];
+    },
     extractPageContent: mockExtractPageContent,
     extractImages: mockExtractImages,
     extractMetadataAndPageCount: mockExtractMetadataAndPageCount,

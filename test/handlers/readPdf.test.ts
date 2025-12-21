@@ -14,8 +14,10 @@ const mockGetMetadata = vi.fn();
 const mockGetPage = vi.fn();
 const mockGetDocument = vi.fn();
 const mockReadFile = vi.fn();
+const mockStat = vi.fn();
 const mockExtractPageContent = vi.fn();
 let actualExtractPageContent: typeof import('../../src/pdf/extractor.js')['extractPageContent'];
+let extractorModule: typeof import('../../src/pdf/extractor.js');
 
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   getDocument: mockGetDocument,
@@ -28,18 +30,11 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
 vi.mock('node:fs/promises', () => ({
   default: {
     readFile: mockReadFile,
+    stat: mockStat,
   },
   readFile: mockReadFile,
+  stat: mockStat,
 }));
-
-vi.mock('../../src/pdf/extractor.js', async () => {
-  const actual = await vi.importActual<typeof import('../../src/pdf/extractor.js')>('../../src/pdf/extractor.js');
-  actualExtractPageContent = actual.extractPageContent;
-  return {
-    ...actual,
-    extractPageContent: mockExtractPageContent,
-  };
-});
 
 // Dynamically import the handler *once* after mocks are defined
 // Define a more specific type for the handler's return value content
@@ -51,6 +46,10 @@ let handler: (args: unknown) => Promise<{ content: HandlerResultContent[] }>;
 let readPdfSchema: Schema<unknown>;
 
 beforeAll(async () => {
+  extractorModule = await import('../../src/pdf/extractor.js');
+  actualExtractPageContent = extractorModule.extractPageContent;
+  vi.spyOn(extractorModule, 'extractPageContent').mockImplementation(mockExtractPageContent);
+
   // Import the readPdf tool - the new SDK uses a builder pattern
   const { readPdf } = await import('../../src/handlers/readPdf.js');
   const { readPdfArgsSchema } = await import('../../src/schemas/readPdf.js');
@@ -90,6 +89,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockExtractPageContent.mockImplementation((...args) => actualExtractPageContent(...args));
+    vi.spyOn(extractorModule, 'extractPageContent').mockImplementation(mockExtractPageContent);
     // Reset mocks for pathUtils if we spy on it
     vi.spyOn(pathUtils, 'resolvePath').mockImplementation((p) => p); // Simple mock for resolvePath
 
@@ -164,6 +164,9 @@ describe('handleReadPdfFunc Integration Tests', () => {
             metadata: { 'dc:format': 'application/pdf' },
             num_pages: 3,
             full_text: 'Mock page text 1\n\nMock page text 2\n\nMock page text 3',
+            warnings: [
+              'No pages specified; processed available pages because the document is small. Specify pages or set allow_full_document=true to control full-document requests.',
+            ],
           },
         },
       ],
@@ -316,6 +319,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
     const args = {
       sources: [{ path: 'many-pages.pdf' }],
       include_full_text: true,
+      allow_full_document: true,
     };
 
     const result = await handler(args);
@@ -467,6 +471,9 @@ describe('handleReadPdfFunc Integration Tests', () => {
             metadata: { 'dc:creator': 'URL Author' },
             num_pages: 2,
             full_text: 'URL Mock page text 1\n\nURL Mock page text 2',
+            warnings: [
+              'No pages specified; processed available pages because the document is small. Specify pages or set allow_full_document=true to control full-document requests.',
+            ],
           },
         },
       ],

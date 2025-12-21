@@ -32,6 +32,13 @@ export const pdfSearchArgsSchema = object({
     bool(description('Preserve original whitespace when building text.'))
   ),
   trim_lines: optional(bool(description('Trim leading/trailing whitespace for each text line.'))),
+  allow_full_document: optional(
+    bool(
+      description(
+        'When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.'
+      )
+    )
+  ),
 });
 
 export type PdfSearchArgs = InferOutput<typeof pdfSearchArgsSchema>;

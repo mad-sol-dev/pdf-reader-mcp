@@ -1,7 +1,7 @@
 // Vex validation schemas for PDF reading
 
 import { array, bool, description, type InferOutput, object, optional } from '@sylphx/vex';
-import { pageSpecifierSchema, pdfSourceSchema, type PdfSource as SharedPdfSource } from './pdfSource.js';
+import { pdfSourceSchema, type PdfSource as SharedPdfSource } from './pdfSource.js';
 
 // Schema for the read_pdf tool arguments
 export const readPdfArgsSchema = object({
@@ -20,6 +20,13 @@ export const readPdfArgsSchema = object({
   include_images: optional(
     bool(
       description('Extract and include embedded images from the PDF pages as base64-encoded data.')
+    )
+  ),
+  allow_full_document: optional(
+    bool(
+      description(
+        'When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.'
+      )
     )
   ),
 });

@@ -31,6 +31,8 @@ const summarizePageStats = (
       page: pagesToProcess[idx] as number,
       text_length: textLength,
       image_count: imageCount,
+      has_text: textLength > 0,
+      has_images: imageCount > 0,
     };
   });
 };

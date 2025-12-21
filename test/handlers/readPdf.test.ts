@@ -14,6 +14,8 @@ const mockGetMetadata = vi.fn();
 const mockGetPage = vi.fn();
 const mockGetDocument = vi.fn();
 const mockReadFile = vi.fn();
+const mockExtractPageContent = vi.fn();
+let actualExtractPageContent: typeof import('../../src/pdf/extractor.js')['extractPageContent'];
 
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   getDocument: mockGetDocument,
@@ -29,6 +31,15 @@ vi.mock('node:fs/promises', () => ({
   },
   readFile: mockReadFile,
 }));
+
+vi.mock('../../src/pdf/extractor.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/pdf/extractor.js')>('../../src/pdf/extractor.js');
+  actualExtractPageContent = actual.extractPageContent;
+  return {
+    ...actual,
+    extractPageContent: mockExtractPageContent,
+  };
+});
 
 // Dynamically import the handler *once* after mocks are defined
 // Define a more specific type for the handler's return value content
@@ -78,6 +89,7 @@ beforeAll(async () => {
 describe('handleReadPdfFunc Integration Tests', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockExtractPageContent.mockImplementation((...args) => actualExtractPageContent(...args));
     // Reset mocks for pathUtils if we spy on it
     vi.spyOn(pathUtils, 'resolvePath').mockImplementation((p) => p); // Simple mock for resolvePath
 
@@ -252,6 +264,81 @@ describe('handleReadPdfFunc Integration Tests', () => {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (result.content?.[0]) {
       expect(JSON.parse(result.content[0].text) as ExpectedResultType).toEqual(expectedData);
+    } else {
+      expect.fail('result.content[0] was undefined');
+    }
+  });
+
+  it('limits concurrent page extraction while preserving output order', async () => {
+    const totalPages = 12;
+    const pageNumbers = Array.from({ length: totalPages }, (_value, idx) => idx + 1);
+
+    mockReadFile.mockResolvedValue(Buffer.from('mock pdf content with many pages'));
+
+    mockGetPage.mockImplementation((pageNum: number) => {
+      if (pageNum > 0 && pageNum <= totalPages) {
+        return {
+          getTextContent: vi.fn().mockResolvedValue({
+            items: [
+              {
+                str: `Mock page text ${String(pageNum)}`,
+                transform: [1, 0, 0, 1, 0, 100 + pageNum * 5],
+              },
+            ],
+          }),
+          getOperatorList: vi.fn().mockResolvedValue({ fnArray: [], argsArray: [] }),
+          objs: { get: vi.fn() },
+        };
+      }
+      throw new Error(`Mock getPage error: Invalid page number ${String(pageNum)}`);
+    });
+
+    const mockDocumentAPI = {
+      numPages: totalPages,
+      getMetadata: mockGetMetadata,
+      getPage: mockGetPage,
+    };
+    const mockLoadingTaskAPI = { promise: Promise.resolve(mockDocumentAPI) };
+    mockGetDocument.mockReturnValue(mockLoadingTaskAPI);
+
+    let activeExtractions = 0;
+    let maxConcurrentExtractions = 0;
+
+    mockExtractPageContent.mockImplementation(async (...args) => {
+      activeExtractions += 1;
+      maxConcurrentExtractions = Math.max(maxConcurrentExtractions, activeExtractions);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const result = await actualExtractPageContent(...args);
+      activeExtractions -= 1;
+      return result;
+    });
+
+    const args = {
+      sources: [{ path: 'many-pages.pdf' }],
+      include_full_text: true,
+    };
+
+    const result = await handler(args);
+
+    // Add check for content existence and access safely
+    expect(result.content).toBeDefined();
+    expect(result.content.length).toBeGreaterThan(0);
+
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (result.content?.[0]) {
+      const parsed = JSON.parse(result.content[0].text) as ExpectedResultType;
+      const firstResult = parsed.results[0];
+
+      expect(maxConcurrentExtractions).toBeLessThanOrEqual(5);
+      expect(firstResult?.success).toBe(true);
+
+      const data = firstResult?.data as { full_text?: string; page_contents?: Array<{ page: number }> };
+      expect(data?.full_text).toContain('Mock page text 1');
+      expect(data?.full_text).toContain(`Mock page text ${String(totalPages)}`);
+      expect(data?.full_text?.split('\n\n').length).toBe(totalPages);
+
+      const pageTextParts = result.content.slice(1).map((part) => part.text);
+      expect(pageTextParts).toEqual(pageNumbers.map((page) => `Mock page text ${String(page)}`));
     } else {
       expect.fail('result.content[0] was undefined');
     }

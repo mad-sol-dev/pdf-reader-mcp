@@ -43,6 +43,13 @@ export interface PdfResultData {
   warnings?: string[];
 }
 
+export interface PdfMetadataSummary extends PdfResultData {
+  fingerprint?: string;
+  has_page_labels?: boolean;
+  has_outline?: boolean;
+  sample_page_labels?: string[];
+}
+
 export interface PdfSourceResult {
   source: string;
   success: boolean;
@@ -50,10 +57,19 @@ export interface PdfSourceResult {
   error?: string;
 }
 
+export interface PdfSourceMetadataResult {
+  source: string;
+  success: boolean;
+  data?: PdfMetadataSummary | undefined;
+  error?: string;
+}
+
 export interface PageStat {
   page: number;
   text_length: number;
   image_count: number;
+  has_text: boolean;
+  has_images: boolean;
 }
 
 export interface PdfPageStats {
@@ -66,6 +82,24 @@ export interface PdfSourcePageStatsResult {
   source: string;
   success: boolean;
   data?: PdfPageStats | undefined;
+  error?: string;
+}
+
+export interface PdfTocItem {
+  title: string;
+  page?: number;
+  depth: number;
+}
+
+export interface PdfTocData {
+  has_outline: boolean;
+  toc: PdfTocItem[];
+}
+
+export interface PdfSourceTocResult {
+  source: string;
+  success: boolean;
+  data?: PdfTocData | undefined;
   error?: string;
 }
 

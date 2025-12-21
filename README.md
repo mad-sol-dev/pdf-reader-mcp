@@ -204,6 +204,8 @@ npm install -g @sylphx/pdf-reader-mcp
 }
 ```
 
+> ⚠️ **Heads up:** Large PDFs require explicit `pages` or `allow_full_document=true`. When pages are omitted, the server samples only the first pages and returns a guard warning to prevent accidental full-document reads.
+
 **Result:**
 - ✅ Full text content extracted
 - ✅ PDF metadata (author, title, dates)
@@ -378,6 +380,7 @@ Counts characters and (optionally) images per page to size work before full extr
 |-----------|------|-------------|---------|
 | `sources` | Array | List of PDF sources to scan | Required |
 | `include_images` | boolean | Count images while scanning pages | `false` |
+| `allow_full_document` | boolean | Explicitly permit full-document scans when `pages` is omitted; otherwise guarded sampling occurs on large files | `false` |
 
 **Output:** `num_pages`, `page_stats` with `page`, `text_length`, `image_count`, `has_text`, `has_images`, plus `warnings` for invalid page specs.
 
@@ -392,6 +395,7 @@ Extracts ordered text per page with optional image indexes (no binary data) plus
 | `max_chars_per_page` | number | Truncate each page after N characters | unset |
 | `preserve_whitespace` | boolean | Keep original whitespace (otherwise collapsed) | `false` |
 | `trim_lines` | boolean | Trim leading/trailing whitespace per line | `true` |
+| `allow_full_document` | boolean | Allow full-document reads when `pages` is not provided; otherwise a guard samples only the first pages with a warning | `false` |
 
 **Output:** `page_index` (0-based), `page_number`, optional `page_label`, ordered `lines`, combined `text`, `image_indexes`, and `truncated_pages` metadata when limits apply.
 
@@ -418,6 +422,7 @@ Lists page/index/dimension/format info for all images (or filtered pages) withou
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `sources` | Array | List of PDF sources to inspect (honors `pages` filters) | Required |
+| `allow_full_document` | boolean | Permit full-document image enumeration when `pages` are omitted; otherwise guarded sampling/limits apply for large PDFs | `false` |
 
 **Output:** `images` array with page/index/width/height/format, `total_images`, and `warnings` when page ranges are out of bounds.
 

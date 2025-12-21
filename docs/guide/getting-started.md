@@ -131,7 +131,7 @@ Each page includes ordered `lines`, combined `text`, optional `page_label`, and 
 }
 ```
 
-Results return page indexes/labels plus `match` text and `context_before`/`context_after` strings.
+Results return page indexes/labels plus `match` text and `context_before`/`context_after` strings sized by `context_chars` on either side of the hit.
 
 ### Images & OCR
 

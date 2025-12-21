@@ -397,7 +397,7 @@ Extracts ordered text per page with optional image indexes (no binary data) plus
 
 ### `pdf_search` — page-aware search
 
-Iterates pages in reading order with plain text or regex matching. Returns page index/label, exact match, and surrounding context while honoring `pages` filters and `max_hits` short-circuiting.
+Iterates pages in reading order with plain text or regex matching. Returns page index/label, exact match, and surrounding `context_before`/`context_after` strings while honoring `pages` filters and `max_hits` short-circuiting.
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|

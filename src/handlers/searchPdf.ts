@@ -76,15 +76,22 @@ const findRegexMatches = (
   return matches;
 };
 
-const buildContext = (
+const buildContextSegments = (
   textContent: string,
   index: number,
   length: number,
   contextChars: number
-): string => {
-  const start = Math.max(0, index - contextChars);
-  const end = Math.min(textContent.length, index + length + contextChars);
-  return textContent.slice(start, end);
+): { context_before: string; context_after: string } => {
+  const beforeStart = Math.max(0, index - contextChars);
+  const before = textContent.slice(beforeStart, index);
+
+  const afterEnd = Math.min(textContent.length, index + length + contextChars);
+  const after = textContent.slice(index + length, afterEnd);
+
+  return {
+    context_before: before,
+    context_after: after,
+  };
 };
 
 const getPageLabelsSafe = async (
@@ -136,13 +143,22 @@ const collectPageHits = async (
       ? findRegexMatches(normalized.text, options.query, options, remaining)
       : findPlainMatches(normalized.text, options.query, options, remaining);
 
-    const pageHits = matches.map((match) => ({
-      page_number: pageNum,
-      page_index: pageNum - 1,
-      page_label: pageLabels?.[pageNum - 1] ?? undefined,
-      match: match.match,
-      context: buildContext(normalized.text, match.index, match.match.length, options.contextChars),
-    }));
+    const pageHits = matches.map((match) => {
+      const segments = buildContextSegments(
+        normalized.text,
+        match.index,
+        match.match.length,
+        options.contextChars
+      );
+
+      return {
+        page_number: pageNum,
+        page_index: pageNum - 1,
+        page_label: pageLabels?.[pageNum - 1] ?? undefined,
+        match: match.match,
+        ...segments,
+      };
+    });
 
     hits.push(...pageHits);
   }

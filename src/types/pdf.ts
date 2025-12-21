@@ -187,7 +187,8 @@ export interface PdfSearchHit {
   page_index: number;
   page_label?: string | null;
   match: string;
-  context: string;
+  context_before: string;
+  context_after: string;
 }
 
 export interface PdfSearchData {

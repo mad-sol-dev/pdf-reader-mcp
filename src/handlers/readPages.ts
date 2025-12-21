@@ -160,7 +160,7 @@ const processSourcePages = async (
     const totalPages = pdfDocument.numPages;
     const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
 
-    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
+    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(
       targetPages,
       totalPages,
       true,
@@ -180,6 +180,7 @@ const processSourcePages = async (
     );
 
     const warnings = [
+      ...(rangeWarnings ?? []),
       ...buildWarnings(invalidPages, totalPages),
       ...(guardWarning ? [guardWarning] : []),
     ];

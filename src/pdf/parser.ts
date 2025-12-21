@@ -5,6 +5,7 @@ import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('Parser');
 const MAX_RANGE_SIZE = 10000; // Prevent infinite loops for open ranges
+export const DEFAULT_SAMPLE_PAGE_LIMIT = 5;
 
 /**
  * Parse a single range part (e.g., "1-3", "5", "7-")
@@ -106,20 +107,51 @@ export const getTargetPages = (
 /**
  * Determine which pages to process based on target pages and document size
  */
+export interface DeterminePagesOptions {
+  allowFullDocument?: boolean;
+  samplePageLimit?: number;
+}
+
+export interface DeterminePagesResult {
+  pagesToProcess: number[];
+  invalidPages: number[];
+  guardWarning?: string;
+  sampledFromFullDocument?: boolean;
+}
+
 export const determinePagesToProcess = (
   targetPages: number[] | undefined,
   totalPages: number,
-  includeFullText: boolean
-): { pagesToProcess: number[]; invalidPages: number[] } => {
+  includeFullText: boolean,
+  options?: DeterminePagesOptions
+): DeterminePagesResult => {
   if (targetPages) {
     const pagesToProcess = targetPages.filter((p) => p <= totalPages);
     const invalidPages = targetPages.filter((p) => p > totalPages);
     return { pagesToProcess, invalidPages };
   }
 
+  const allowFullDocument = options?.allowFullDocument ?? includeFullText;
+
   if (includeFullText) {
-    const pagesToProcess = Array.from({ length: totalPages }, (_, i) => i + 1);
-    return { pagesToProcess, invalidPages: [] };
+    if (allowFullDocument) {
+      const pagesToProcess = Array.from({ length: totalPages }, (_, i) => i + 1);
+      return { pagesToProcess, invalidPages: [] };
+    }
+
+    const samplePageLimit = options?.samplePageLimit ?? DEFAULT_SAMPLE_PAGE_LIMIT;
+    const sampledPagesCount = Math.min(samplePageLimit, totalPages);
+    const pagesToProcess = Array.from({ length: sampledPagesCount }, (_, i) => i + 1);
+
+    return {
+      pagesToProcess,
+      invalidPages: [],
+      sampledFromFullDocument: true,
+      guardWarning:
+        totalPages > samplePageLimit
+          ? `No pages specified; returning the first ${sampledPagesCount} of ${totalPages} pages. Specify pages or set allow_full_document=true to process the full document.`
+          : 'No pages specified; processed available pages because the document is small. Specify pages or set allow_full_document=true to control full-document requests.',
+    };
   }
 
   return { pagesToProcess: [], invalidPages: [] };

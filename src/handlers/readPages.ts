@@ -2,7 +2,11 @@ import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { buildWarnings, extractPageContent } from '../pdf/extractor.js';
 import { loadPdfDocument } from '../pdf/loader.js';
-import { determinePagesToProcess, getTargetPages } from '../pdf/parser.js';
+import {
+  DEFAULT_SAMPLE_PAGE_LIMIT,
+  determinePagesToProcess,
+  getTargetPages,
+} from '../pdf/parser.js';
 import { buildNormalizedPageText } from '../pdf/text.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
 import { readPagesArgsSchema } from '../schemas/readPages.js';
@@ -139,7 +143,8 @@ const destroyPdfDocument = async (
 const processSourcePages = async (
   source: PdfSource,
   sourceDescription: string,
-  options: PageReadOptions
+  options: PageReadOptions,
+  allowFullDocument: boolean
 ): Promise<PdfSourcePagesResult> => {
   let pdfDocument: pdfjsLib.PDFDocumentProxy | null = null;
   let result: PdfSourcePagesResult = { source: sourceDescription, success: false };
@@ -152,7 +157,15 @@ const processSourcePages = async (
     const totalPages = pdfDocument.numPages;
     const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
 
-    const { pagesToProcess, invalidPages } = determinePagesToProcess(targetPages, totalPages, true);
+    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
+      targetPages,
+      totalPages,
+      true,
+      {
+        allowFullDocument,
+        samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT,
+      }
+    );
     const pageLabels = await getPageLabelsSafe(pdfDocument, sourceDescription);
     const { pages, truncatedPages } = await collectPages(
       pdfDocument,
@@ -163,7 +176,10 @@ const processSourcePages = async (
       fingerprint
     );
 
-    const warnings = buildWarnings(invalidPages, totalPages);
+    const warnings = [
+      ...buildWarnings(invalidPages, totalPages),
+      ...(guardWarning ? [guardWarning] : []),
+    ];
 
     result = {
       source: sourceDescription,
@@ -192,8 +208,14 @@ export const pdfReadPages = tool()
   .description('Reads structured text for specific PDF pages with optional image indexes.')
   .input(readPagesArgsSchema)
   .handler(async ({ input }) => {
-    const { sources, include_image_indexes, max_chars_per_page, preserve_whitespace, trim_lines } =
-      input;
+    const {
+      sources,
+      include_image_indexes,
+      max_chars_per_page,
+      preserve_whitespace,
+      trim_lines,
+      allow_full_document,
+    } = input;
 
     const options: PageReadOptions = {
       includeImageIndexes: include_image_indexes ?? false,
@@ -210,7 +232,12 @@ export const pdfReadPages = tool()
       const batchResults = await Promise.all(
         batch.map((source) => {
           const sourceDescription = source.path ?? source.url ?? 'unknown source';
-          return processSourcePages(source, sourceDescription, options);
+          return processSourcePages(
+            source,
+            sourceDescription,
+            options,
+            allow_full_document ?? false
+          );
         })
       );
 

@@ -68,15 +68,17 @@ class Logger {
     logMessage: string,
     structuredLog: Record<string, unknown>
   ): void {
-    console.error(logMessage);
+    const logMethod = this.getConsoleMethod(level);
+    logMethod(logMessage);
 
     if (level === 'error' || level === 'warn') {
-      console.error(JSON.stringify(structuredLog));
+      logMethod(JSON.stringify(structuredLog));
     }
   }
 
   private logSimple(level: string, logMessage: string): void {
-    console.error(logMessage);
+    const logMethod = this.getConsoleMethod(level);
+    logMethod(logMessage);
   }
 
   private log(level: string, message: string, context?: LogContext): void {
@@ -94,6 +96,19 @@ class Logger {
       this.logWithContext(level, logMessage, structuredLog);
     } else {
       this.logSimple(level, logMessage);
+    }
+  }
+
+  private getConsoleMethod(level: string): (...args: unknown[]) => void {
+    switch (level) {
+      case 'debug':
+        return console.debug;
+      case 'info':
+        return console.info;
+      case 'warn':
+        return console.warn;
+      default:
+        return console.error;
     }
   }
 }

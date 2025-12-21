@@ -1,6 +1,10 @@
 import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import { buildWarnings, extractImages } from '../pdf/extractor.js';
-import { determinePagesToProcess, getTargetPages } from '../pdf/parser.js';
+import {
+  DEFAULT_SAMPLE_PAGE_LIMIT,
+  determinePagesToProcess,
+  getTargetPages,
+} from '../pdf/parser.js';
 import { listImagesArgsSchema } from '../schemas/listImages.js';
 import type { PdfImageInfo, PdfImageListResult } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
@@ -17,16 +21,28 @@ const summarizeImages = (images: PdfImageInfo[], warnings: string[]) => ({
 
 const collectImages = async (
   source: { path?: string; url?: string; pages?: string | number[] },
-  sourceDescription: string
+  sourceDescription: string,
+  allowFullDocument: boolean
 ): Promise<PdfImageListResult> => {
   const { pages: _pages, ...loadArgs } = source;
 
   return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
     const totalPages = pdfDocument.numPages;
     const targetPages = getTargetPages(source.pages, sourceDescription);
-    const { pagesToProcess, invalidPages } = determinePagesToProcess(targetPages, totalPages, true);
+    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
+      targetPages,
+      totalPages,
+      true,
+      {
+        allowFullDocument,
+        samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT,
+      }
+    );
     const images = await extractImages(pdfDocument, pagesToProcess);
-    const warnings = buildWarnings(invalidPages, totalPages);
+    const warnings = [
+      ...buildWarnings(invalidPages, totalPages),
+      ...(guardWarning ? [guardWarning] : []),
+    ];
 
     const imageInfo: PdfImageInfo[] = images.map((img) => ({
       page: img.page,
@@ -59,13 +75,19 @@ export const pdfListImages = tool()
   )
   .input(listImagesArgsSchema)
   .handler(async ({ input }) => {
-    const { sources } = input;
+    const { sources, allow_full_document } = input;
     const results: PdfImageListResult[] = [];
 
     for (let i = 0; i < sources.length; i += MAX_CONCURRENT_SOURCES) {
       const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES);
       const batchResults = await Promise.all(
-        batch.map((source) => collectImages(source, source.path ?? source.url ?? 'unknown source'))
+        batch.map((source) =>
+          collectImages(
+            source,
+            source.path ?? source.url ?? 'unknown source',
+            allow_full_document ?? false
+          )
+        )
       );
       results.push(...batchResults);
     }

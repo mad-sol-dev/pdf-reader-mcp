@@ -1,12 +1,16 @@
 import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { buildWarnings, extractPageContent } from '../pdf/extractor.js';
-import { loadPdfDocument } from '../pdf/loader.js';
-import { determinePagesToProcess, getTargetPages } from '../pdf/parser.js';
+import {
+  DEFAULT_SAMPLE_PAGE_LIMIT,
+  determinePagesToProcess,
+  getTargetPages,
+} from '../pdf/parser.js';
 import { getPageStatsArgsSchema } from '../schemas/getPageStats.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
 import type { PdfPageStats, PdfSourcePageStatsResult } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
+import { withPdfDocument } from '../utils/pdfLifecycle.js';
 
 const logger = createLogger('GetPageStats');
 
@@ -40,22 +44,23 @@ const summarizePageStats = (
 const processSourceStats = async (
   source: PdfSource,
   sourceDescription: string,
-  includeImages: boolean
+  includeImages: boolean,
+  allowFullDocument: boolean
 ): Promise<PdfSourcePageStatsResult> => {
-  let pdfDocument: pdfjsLib.PDFDocumentProxy | null = null;
-  let result: PdfSourcePageStatsResult = { source: sourceDescription, success: false };
+  const { pages: _pages, ...loadArgs } = source;
 
-  try {
+  return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
     const targetPages = getTargetPages(source.pages, sourceDescription);
-    const { pages: _pages, ...loadArgs } = source;
-
-    pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const totalPages = pdfDocument.numPages;
 
-    const { pagesToProcess, invalidPages } = determinePagesToProcess(
+    const { pagesToProcess, invalidPages, guardWarning } = determinePagesToProcess(
       targetPages,
       totalPages,
-      true
+      true,
+      {
+        allowFullDocument,
+        samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT,
+      }
     );
 
     const pageContents = await Promise.all(
@@ -69,7 +74,10 @@ const processSourceStats = async (
       )
     );
 
-    const warnings = buildWarnings(invalidPages, totalPages);
+    const warnings = [
+      ...buildWarnings(invalidPages, totalPages),
+      ...(guardWarning ? [guardWarning] : []),
+    ];
 
     const data: PdfPageStats = {
       num_pages: totalPages,
@@ -80,33 +88,24 @@ const processSourceStats = async (
       data.warnings = warnings;
     }
 
-    result = { source: sourceDescription, success: true, data };
-  } catch (error: unknown) {
+    return { source: sourceDescription, success: true, data } satisfies PdfSourcePageStatsResult;
+  }).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    result = {
+    logger.warn('Failed to compute page stats', { sourceDescription, error: message });
+
+    return {
       source: sourceDescription,
       success: false,
       error: `Failed to compute page stats for ${sourceDescription}. Reason: ${message}`,
-    };
-  } finally {
-    if (pdfDocument && typeof pdfDocument.destroy === 'function') {
-      try {
-        await pdfDocument.destroy();
-      } catch (destroyError: unknown) {
-        const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-        logger.warn('Error destroying PDF document', { sourceDescription, error: message });
-      }
-    }
-  }
-
-  return result;
+    } satisfies PdfSourcePageStatsResult;
+  });
 };
 
 export const pdfGetPageStats = tool()
   .description('Returns per-page text length and image counts for selected pages in PDFs.')
   .input(getPageStatsArgsSchema)
   .handler(async ({ input }) => {
-    const { sources, include_images } = input;
+    const { sources, include_images, allow_full_document } = input;
     const includeImages = include_images ?? false;
     const MAX_CONCURRENT_SOURCES = 3;
 
@@ -117,7 +116,12 @@ export const pdfGetPageStats = tool()
       const batchResults = await Promise.all(
         batch.map((source) => {
           const sourceDescription = source.path ?? source.url ?? 'unknown source';
-          return processSourceStats(source, sourceDescription, includeImages);
+          return processSourceStats(
+            source,
+            sourceDescription,
+            includeImages,
+            allow_full_document ?? false
+          );
         })
       );
 

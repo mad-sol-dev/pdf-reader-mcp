@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { determinePagesToProcess, getTargetPages, parsePageRanges } from '../../src/pdf/parser.js';
+import {
+  DEFAULT_SAMPLE_PAGE_LIMIT,
+  determinePagesToProcess,
+  getTargetPages,
+  parsePageRanges,
+} from '../../src/pdf/parser.js';
 import { ErrorCode, PdfError } from '../../src/utils/errors.js';
 
 describe('parser', () => {
@@ -145,6 +150,14 @@ describe('parser', () => {
       const result = determinePagesToProcess([2, 4], 10, true);
       expect(result.pagesToProcess).toEqual([2, 4]);
       expect(result.invalidPages).toEqual([]);
+    });
+
+    it('should sample pages and provide a guard warning when full document access is not allowed', () => {
+      const result = determinePagesToProcess(undefined, 20, true, { allowFullDocument: false });
+
+      expect(result.pagesToProcess).toEqual(Array.from({ length: DEFAULT_SAMPLE_PAGE_LIMIT }, (_, idx) => idx + 1));
+      expect(result.sampledFromFullDocument).toBe(true);
+      expect(result.guardWarning).toContain('allow_full_document=true');
     });
   });
 });

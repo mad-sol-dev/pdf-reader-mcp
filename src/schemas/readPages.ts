@@ -22,6 +22,13 @@ export const readPagesArgsSchema = object({
   ),
   preserve_whitespace: optional(bool(description('Preserve original whitespace from the PDF.'))),
   trim_lines: optional(bool(description('Trim leading/trailing whitespace for each text line.'))),
+  allow_full_document: optional(
+    bool(
+      description(
+        'When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.'
+      )
+    )
+  ),
 });
 
 export type ReadPagesArgs = InferOutput<typeof readPagesArgsSchema>;

@@ -224,6 +224,8 @@ npm install -g @sylphx/pdf-reader-mcp
 }
 ```
 
+> ℹ️ **Page range guard:** Open-ended `pages` ranges like `"5-"` are capped by `MAX_RANGE_SIZE` (10,000-page span). When a range is shortened, the response includes a warning so you know the request was truncated.
+
 ### Absolute Paths (v1.3.0+)
 
 ```json
@@ -347,6 +349,8 @@ npm install -g @sylphx/pdf-reader-mcp
 ---
 
 ## 📖 API Reference
+
+> ℹ️ Page ranges honor `MAX_RANGE_SIZE` to prevent runaway open-ended requests. A range such as `"25-"` will be shortened after a 10,000-page span and the response will surface a truncation warning alongside any other `warnings` entries.
 
 ### `pdf_get_metadata` — metadata & page label probe
 

@@ -1,38 +1,61 @@
 import type { PdfPageText } from '../types/pdf.js';
 
+interface PageCacheOptions {
+  includeImageIndexes: boolean;
+  maxCharsPerPage?: number;
+  preserveWhitespace: boolean;
+  trimLines: boolean;
+}
+
+interface CachedOcrResult {
+  text: string;
+  provider?: string;
+}
+
 interface CacheEntry<T> {
   value: T;
   createdAt: number;
 }
 
 const textCache = new Map<string, CacheEntry<PdfPageText>>();
-const ocrCache = new Map<string, CacheEntry<string>>();
+const ocrCache = new Map<string, CacheEntry<CachedOcrResult>>();
 
-const buildPageKey = (fingerprint: string, page: number): string => `${fingerprint}#page#${page}`;
+const buildPageKey = (fingerprint: string, page: number, options: PageCacheOptions): string => {
+  const serializedOptions = JSON.stringify({
+    includeImageIndexes: options.includeImageIndexes,
+    preserveWhitespace: options.preserveWhitespace,
+    trimLines: options.trimLines,
+    maxCharsPerPage: options.maxCharsPerPage ?? null,
+  });
+
+  return `${fingerprint}#page#${page}#${serializedOptions}`;
+};
 
 const buildOcrKey = (fingerprint: string, target: string): string => `${fingerprint}#${target}`;
 
 export const getCachedPageText = (
   fingerprint: string | undefined,
-  page: number
+  page: number,
+  options: PageCacheOptions
 ): PdfPageText | undefined => {
   if (!fingerprint) return undefined;
-  return textCache.get(buildPageKey(fingerprint, page))?.value;
+  return textCache.get(buildPageKey(fingerprint, page, options))?.value;
 };
 
 export const setCachedPageText = (
   fingerprint: string | undefined,
   page: number,
+  options: PageCacheOptions,
   value: PdfPageText
 ): void => {
   if (!fingerprint) return;
-  textCache.set(buildPageKey(fingerprint, page), { value, createdAt: Date.now() });
+  textCache.set(buildPageKey(fingerprint, page, options), { value, createdAt: Date.now() });
 };
 
 export const getCachedOcrText = (
   fingerprint: string | undefined,
   target: string
-): string | undefined => {
+): CachedOcrResult | undefined => {
   if (!fingerprint) return undefined;
   return ocrCache.get(buildOcrKey(fingerprint, target))?.value;
 };
@@ -40,10 +63,10 @@ export const getCachedOcrText = (
 export const setCachedOcrText = (
   fingerprint: string | undefined,
   target: string,
-  text: string
+  value: CachedOcrResult
 ): void => {
   if (!fingerprint) return;
-  ocrCache.set(buildOcrKey(fingerprint, target), { value: text, createdAt: Date.now() });
+  ocrCache.set(buildOcrKey(fingerprint, target), { value, createdAt: Date.now() });
 };
 
 export const getCacheStats = (): {

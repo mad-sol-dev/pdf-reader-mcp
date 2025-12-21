@@ -44,17 +44,34 @@ const performPageOcr = async (
     }
 
     const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
-    const cacheKey = `page-${page}`;
+    const renderScale = scale ?? 1.5;
+    const providerKey = provider
+      ? JSON.stringify({
+          name: provider.name,
+          type: provider.type,
+          endpoint: provider.endpoint,
+          model: provider.model,
+          language: provider.language,
+          extras: provider.extras,
+        })
+      : 'default';
+    const cacheKey = `page-${page}#scale-${renderScale}#provider-${providerKey}`;
     const cached = useCache ? getCachedOcrText(fingerprint, cacheKey) : undefined;
 
     if (cached) {
-      return buildCachedResult(sourceDescription, fingerprint, page, provider?.name, cached);
+      return buildCachedResult(
+        sourceDescription,
+        fingerprint,
+        page,
+        cached.provider ?? provider?.name,
+        cached.text
+      );
     }
 
-    const rendered = await renderPageToPng(pdfDocument, page, scale ?? 1.5);
+    const rendered = await renderPageToPng(pdfDocument, page, renderScale);
     const ocr = await performOcr(rendered.data, provider);
 
-    setCachedOcrText(fingerprint, cacheKey, ocr.text);
+    setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
     return {
       source: sourceDescription,

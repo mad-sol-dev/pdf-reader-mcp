@@ -28,7 +28,7 @@ const processPage = async (
   fingerprint?: string,
   pageLabel?: string | null
 ): Promise<PdfPageText> => {
-  const cached = getCachedPageText(fingerprint, pageNum);
+  const cached = getCachedPageText(fingerprint, pageNum, options);
   if (cached) {
     return cached;
   }
@@ -69,7 +69,7 @@ const processPage = async (
     }
   }
 
-  setCachedPageText(fingerprint, pageNum, pageEntry);
+  setCachedPageText(fingerprint, pageNum, options, pageEntry);
 
   return pageEntry;
 };

@@ -59,8 +59,8 @@ describe('MCP Server Integration', () => {
   beforeAll(async () => {
     // Start the MCP server
     const serverPath = path.resolve(__dirname, '../../dist/index.js');
-    // Must use bun as SDK uses Bun APIs
-    serverProc = spawn('bun', [serverPath], {
+    // Use node to run the compiled server
+    serverProc = spawn('node', [serverPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, NODE_ENV: 'test' },
     });

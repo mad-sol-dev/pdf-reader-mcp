@@ -2,7 +2,7 @@ import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import { extractImages } from '../pdf/extractor.js';
 import { ocrImageArgsSchema } from '../schemas/ocr.js';
 import type { OcrResult } from '../types/pdf.js';
-import { getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
+import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import { performOcr } from '../utils/ocr.js';
@@ -45,7 +45,8 @@ const performImageOcr = async (
     }
 
     const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
-    const cacheKey = `image-${page}-${index}`;
+    const providerKey = buildOcrProviderKey(provider);
+    const cacheKey = `image-${page}-${index}#provider-${providerKey}`;
     const cached = useCache ? getCachedOcrText(fingerprint, cacheKey) : undefined;
 
     if (cached) {

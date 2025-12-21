@@ -1,4 +1,5 @@
 import type { PdfPageText } from '../types/pdf.js';
+import type { OcrProviderOptions } from './ocr.js';
 
 interface PageCacheOptions {
   includeImageIndexes: boolean;
@@ -30,6 +31,18 @@ const buildPageKey = (fingerprint: string, page: number, options: PageCacheOptio
 
   return `${fingerprint}#page#${page}#${serializedOptions}`;
 };
+
+export const buildOcrProviderKey = (provider?: OcrProviderOptions): string =>
+  provider
+    ? JSON.stringify({
+        name: provider.name,
+        type: provider.type,
+        endpoint: provider.endpoint,
+        model: provider.model,
+        language: provider.language,
+        extras: provider.extras,
+      })
+    : 'default';
 
 const buildOcrKey = (fingerprint: string, target: string): string => `${fingerprint}#${target}`;
 

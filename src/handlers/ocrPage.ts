@@ -2,7 +2,7 @@ import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import { renderPageToPng } from '../pdf/render.js';
 import { ocrPageArgsSchema } from '../schemas/ocr.js';
 import type { OcrResult } from '../types/pdf.js';
-import { getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
+import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import { performOcr } from '../utils/ocr.js';
@@ -45,16 +45,7 @@ const performPageOcr = async (
 
     const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
     const renderScale = scale ?? 1.5;
-    const providerKey = provider
-      ? JSON.stringify({
-          name: provider.name,
-          type: provider.type,
-          endpoint: provider.endpoint,
-          model: provider.model,
-          language: provider.language,
-          extras: provider.extras,
-        })
-      : 'default';
+    const providerKey = buildOcrProviderKey(provider);
     const cacheKey = `page-${page}#scale-${renderScale}#provider-${providerKey}`;
     const cached = useCache ? getCachedOcrText(fingerprint, cacheKey) : undefined;
 

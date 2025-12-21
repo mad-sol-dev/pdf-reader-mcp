@@ -64,7 +64,7 @@ PDF Reader MCP is a **production-ready** Model Context Protocol server that empo
 - 🖼️ **Smart Ordering** - Y-coordinate based content preserves document layout
 - 🛡️ **Type Safe** - Full TypeScript with strict mode enabled
 - 📚 **Battle-tested** - 103 tests, 94%+ coverage, 98%+ function coverage
-- 🎨 **Simple API** - Single tool handles all operations elegantly
+- 🎨 **Focused API** - Dedicated tools for metadata, navigation, search + backward-compatible `read_pdf`
 
 ---
 
@@ -346,61 +346,45 @@ npm install -g @sylphx/pdf-reader-mcp
 
 ## 📖 API Reference
 
-### `read_pdf` Tool
+### `pdf_read_pages` — structured page reader
 
-The single tool that handles all PDF operations.
-
-#### Parameters
+Extracts ordered text per page with optional image indexes (no binary data) plus truncation/whitespace controls.
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `sources` | Array | List of PDF sources to process | Required |
-| `include_full_text` | boolean | Extract full text content | `false` |
-| `include_metadata` | boolean | Extract PDF metadata | `true` |
-| `include_page_count` | boolean | Include total page count | `true` |
-| `include_images` | boolean | Extract embedded images | `false` |
+| `include_image_indexes` | boolean | Return image indexes for each page (base64 omitted) | `false` |
+| `max_chars_per_page` | number | Truncate each page after N characters | unset |
+| `preserve_whitespace` | boolean | Keep original whitespace (otherwise collapsed) | `false` |
+| `trim_lines` | boolean | Trim leading/trailing whitespace per line | `true` |
 
-#### Source Object
+**Output:** `page_index` (0-based), `page_number`, optional `page_label`, ordered `lines`, combined `text`, `image_indexes`, and `truncated_pages` metadata when limits apply.
 
-```typescript
-{
-  path?: string;        // Local file path (absolute or relative)
-  url?: string;         // HTTP/HTTPS URL to PDF
-  pages?: string | number[];  // Pages to extract: "1-5,10" or [1,2,3]
-}
-```
+### `pdf_search` — page-aware search
 
-#### Examples
+Iterates pages in reading order with plain text or regex matching. Returns page index/label, exact match, and surrounding context while honoring `pages` filters and `max_hits` short-circuiting.
 
-**Metadata only (fast):**
-```json
-{
-  "sources": [{ "path": "large.pdf" }],
-  "include_metadata": true,
-  "include_page_count": true,
-  "include_full_text": false
-}
-```
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `sources` | Array | List of PDF sources to scan | Required |
+| `query` | string | Plain text or regex pattern | Required |
+| `use_regex` | boolean | Treat `query` as regex | `false` |
+| `case_sensitive` | boolean | Case-sensitive matching | `false` |
+| `context_chars` | number | Characters shown before/after each match | `60` |
+| `max_hits` | number | Maximum matches before stopping | `20` |
+| `max_chars_per_page` | number | Truncate each page before searching | unset |
+| `preserve_whitespace` | boolean | Keep original whitespace (otherwise collapsed) | `false` |
+| `trim_lines` | boolean | Trim leading/trailing whitespace per line | `true` |
 
-**From URL:**
-```json
-{
-  "sources": [{
-    "url": "https://arxiv.org/pdf/2301.00001.pdf"
-  }],
-  "include_full_text": true
-}
-```
+### `read_pdf` — compatibility tool
 
-**Page ranges:**
-```json
-{
-  "sources": [{
-    "path": "manual.pdf",
-    "pages": "1-5,10-15,20"  // Pages 1,2,3,4,5,10,11,12,13,14,15,20
-  }]
-}
-```
+Legacy all-in-one extractor kept for backward compatibility. Use when you need the prior combined output shape (full text, metadata, optional images) in a single call.
+
+## 🧭 Navigation & search playbook
+
+1) **Orient first:** Call `pdf_get_toc` to grab outline entries and `pdf_get_metadata` with page labels enabled so you know how the document numbers its pages.
+2) **Skim with structure:** Use `pdf_read_pages` with `pages` filters (e.g., `"1-3,10"`) and `max_chars_per_page` to keep payloads light while preserving ordered `lines` and page labels. Add `include_image_indexes` when you need to reference page visuals without downloading base64 data.
+3) **Search precisely:** Run `pdf_search` with `pages` filters to constrain the surface area, dial `context_chars` to the snippet length you want, and set `max_hits` to short-circuit once enough matches are found. Combine with `preserve_whitespace` when spacing-sensitive patterns or regex captures matter.
 
 ---
 

@@ -57,6 +57,29 @@ export interface PdfSourceResult {
   error?: string;
 }
 
+export interface PdfPageText {
+  page_number: number;
+  page_index: number;
+  page_label?: string | null;
+  lines: string[];
+  text: string;
+  truncated?: boolean;
+  image_indexes?: number[];
+}
+
+export interface PdfPagesData {
+  pages: PdfPageText[];
+  warnings?: string[];
+  truncated_pages?: number[];
+}
+
+export interface PdfSourcePagesResult {
+  source: string;
+  success: boolean;
+  data?: PdfPagesData | undefined;
+  error?: string;
+}
+
 export interface PdfSourceMetadataResult {
   source: string;
   success: boolean;
@@ -100,6 +123,28 @@ export interface PdfSourceTocResult {
   source: string;
   success: boolean;
   data?: PdfTocData | undefined;
+  error?: string;
+}
+
+export interface PdfSearchHit {
+  page_number: number;
+  page_index: number;
+  page_label?: string | null;
+  match: string;
+  context: string;
+}
+
+export interface PdfSearchData {
+  hits: PdfSearchHit[];
+  total_hits: number;
+  warnings?: string[];
+  truncated_pages?: number[];
+}
+
+export interface PdfSourceSearchResult {
+  source: string;
+  success: boolean;
+  data?: PdfSearchData | undefined;
   error?: string;
 }
 

@@ -7,6 +7,8 @@ import { buildNormalizedPageText } from '../pdf/text.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
 import { readPagesArgsSchema } from '../schemas/readPages.js';
 import type { PdfPageText, PdfSourcePagesResult } from '../types/pdf.js';
+import { getCachedPageText, setCachedPageText } from '../utils/cache.js';
+import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('ReadPages');
@@ -23,8 +25,14 @@ const processPage = async (
   pageNum: number,
   sourceDescription: string,
   options: PageReadOptions,
+  fingerprint?: string,
   pageLabel?: string | null
 ): Promise<PdfPageText> => {
+  const cached = getCachedPageText(fingerprint, pageNum);
+  if (cached) {
+    return cached;
+  }
+
   const items = await extractPageContent(
     pdfDocument,
     pageNum,
@@ -61,6 +69,8 @@ const processPage = async (
     }
   }
 
+  setCachedPageText(fingerprint, pageNum, pageEntry);
+
   return pageEntry;
 };
 
@@ -83,14 +93,22 @@ const collectPages = async (
   pagesToProcess: number[],
   pageLabels: string[] | null,
   sourceDescription: string,
-  options: PageReadOptions
+  options: PageReadOptions,
+  fingerprint?: string
 ): Promise<{ pages: PdfPageText[]; truncatedPages: number[] }> => {
   const pages: PdfPageText[] = [];
   const truncatedPages: number[] = [];
 
   for (const pageNum of pagesToProcess) {
     const label = pageLabels?.[pageNum - 1] ?? null;
-    const pageData = await processPage(pdfDocument, pageNum, sourceDescription, options, label);
+    const pageData = await processPage(
+      pdfDocument,
+      pageNum,
+      sourceDescription,
+      options,
+      fingerprint,
+      label
+    );
 
     if (pageData.truncated) {
       truncatedPages.push(pageNum);
@@ -132,6 +150,7 @@ const processSourcePages = async (
 
     pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
     const totalPages = pdfDocument.numPages;
+    const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
 
     const { pagesToProcess, invalidPages } = determinePagesToProcess(targetPages, totalPages, true);
     const pageLabels = await getPageLabelsSafe(pdfDocument, sourceDescription);
@@ -140,7 +159,8 @@ const processSourcePages = async (
       pagesToProcess,
       pageLabels,
       sourceDescription,
-      options
+      options,
+      fingerprint
     );
 
     const warnings = buildWarnings(invalidPages, totalPages);

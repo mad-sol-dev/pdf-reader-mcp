@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pdfGetPageStats } from '../../src/handlers/getPageStats.js';
 import { pdfListImages } from '../../src/handlers/listImages.js';
 import { pdfReadPages } from '../../src/handlers/readPages.js';
+import { readPdf } from '../../src/handlers/readPdf.js';
+import { pdfSearch } from '../../src/handlers/searchPdf.js';
 import { DEFAULT_SAMPLE_PAGE_LIMIT } from '../../src/pdf/parser.js';
 
 const {
   mockExtractPageContent,
   mockExtractImages,
+  mockExtractMetadataAndPageCount,
   mockLoadPdfDocument,
   mockGetCachedPageText,
   mockSetCachedPageText,
@@ -14,6 +17,7 @@ const {
 } = vi.hoisted(() => ({
   mockExtractPageContent: vi.fn(),
   mockExtractImages: vi.fn(),
+  mockExtractMetadataAndPageCount: vi.fn(),
   mockLoadPdfDocument: vi.fn(),
   mockGetCachedPageText: vi.fn(),
   mockSetCachedPageText: vi.fn(),
@@ -30,6 +34,7 @@ vi.mock('../../src/pdf/extractor.js', async () => {
     ...actual,
     extractPageContent: mockExtractPageContent,
     extractImages: mockExtractImages,
+    extractMetadataAndPageCount: mockExtractMetadataAndPageCount,
   };
 });
 
@@ -73,6 +78,7 @@ beforeEach(() => {
   mockGetCachedPageText.mockReturnValue(undefined);
   mockSetCachedPageText.mockImplementation(() => {});
   mockExtractImages.mockResolvedValue([{ page: 1, index: 0, width: 100, height: 100, format: 'png' }]);
+  mockExtractMetadataAndPageCount.mockResolvedValue({ page_count: 12 });
   mockExtractPageContent.mockImplementation(async (_doc, pageNum: number) => [
     { type: 'text', yPosition: 0, textContent: `Page ${pageNum}` },
   ]);
@@ -142,5 +148,37 @@ describe('PDF handlers page guards', () => {
     expect(mockExtractPageContent.mock.calls.map((call) => call[1])).toEqual([2, 4]);
     expect(entry.data?.pages?.map((page) => page.page_number)).toEqual([2, 4]);
     expect(entry.data?.warnings).toBeUndefined();
+  });
+
+  it('samples readPdf full-text requests without allow_full_document', async () => {
+    const result = await readPdf.handler({
+      input: { sources: [{ path: 'doc.pdf' }], include_full_text: true },
+      ctx: {},
+    });
+
+    const payload = JSON.parse(extractTextPayload(result)) as {
+      results: Array<{ data?: { warnings?: string[]; full_text?: string } }>;
+    };
+    const entry = payload.results[0]!;
+
+    expect(mockExtractPageContent).toHaveBeenCalledTimes(DEFAULT_SAMPLE_PAGE_LIMIT);
+    expect(typeof entry.data?.full_text).toBe('string');
+    expect(entry.data?.warnings?.some((warning) => warning.includes('allow_full_document=true'))).toBe(true);
+  });
+
+  it('samples pdfSearch requests when pages are omitted', async () => {
+    const result = await pdfSearch.handler({
+      input: { sources: [{ path: 'doc.pdf' }], query: 'page' },
+      ctx: {},
+    });
+
+    const payload = JSON.parse(extractTextPayload(result)) as {
+      results: Array<{ data?: { warnings?: string[]; total_hits?: number } }>;
+    };
+    const entry = payload.results[0]!;
+
+    expect(mockExtractPageContent).toHaveBeenCalledTimes(DEFAULT_SAMPLE_PAGE_LIMIT);
+    expect(entry.data?.total_hits).toBeGreaterThan(0);
+    expect(entry.data?.warnings?.some((warning) => warning.includes('allow_full_document=true'))).toBe(true);
   });
 });

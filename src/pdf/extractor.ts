@@ -257,10 +257,17 @@ export const extractPageTexts = async (
   pagesToProcess: number[],
   sourceDescription: string
 ): Promise<ExtractedPageText[]> => {
-  // Process all pages in parallel for better performance
-  const extractedPageTexts = await Promise.all(
-    pagesToProcess.map((pageNum) => extractSinglePageText(pdfDocument, pageNum, sourceDescription))
-  );
+  // Process pages in small batches to avoid unbounded memory on large documents
+  const BATCH_SIZE = 6;
+  const extractedPageTexts: ExtractedPageText[] = [];
+
+  for (let i = 0; i < pagesToProcess.length; i += BATCH_SIZE) {
+    const batch = pagesToProcess.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map((pageNum) => extractSinglePageText(pdfDocument, pageNum, sourceDescription))
+    );
+    extractedPageTexts.push(...batchResults);
+  }
 
   return extractedPageTexts.sort((a, b) => a.page - b.page);
 };

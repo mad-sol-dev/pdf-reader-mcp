@@ -1,6 +1,6 @@
-import { array, object, type InferOutput } from '@sylphx/vex';
-import { pdfSourceSchema } from './pdfSource.js';
+import { array, type InferOutput, object } from '@sylphx/vex';
 import type { PdfSourceTocResult, PdfTocData } from '../types/pdf.js';
+import { pdfSourceSchema } from './pdfSource.js';
 
 export const getTocArgsSchema = object({
   sources: array(pdfSourceSchema),

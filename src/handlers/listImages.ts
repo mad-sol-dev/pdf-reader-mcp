@@ -20,7 +20,7 @@ const summarizeImages = (images: PdfImageInfo[], warnings: string[]) => ({
 });
 
 const collectImages = async (
-  source: { path?: string; url?: string; pages?: string | number[] },
+  source: { path?: string | undefined; url?: string | undefined; pages?: string | number[] },
   sourceDescription: string,
   allowFullDocument: boolean
 ): Promise<PdfImageListResult> => {
@@ -79,24 +79,37 @@ export const pdfListImages = tool()
   .input(listImagesArgsSchema)
   .handler(async ({ input }) => {
     const { sources, allow_full_document } = input;
+    const allowFullDocument = allow_full_document ?? false;
     const results: PdfImageListResult[] = [];
 
     for (let i = 0; i < sources.length; i += MAX_CONCURRENT_SOURCES) {
       const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES);
       const batchResults = await Promise.all(
-        batch.map((source) =>
-          collectImages(
-            {
-              ...(source.path ? { path: source.path } : {}),
-              ...(source.url ? { url: source.url } : {}),
-              ...(source.pages !== undefined ? { pages: source.pages } : {}),
-            },
+        batch.map((source) => {
+          const sourceArgs: { path?: string; url?: string; pages?: string | number[] } = {};
+
+          if (typeof source.path === 'string') {
+            sourceArgs.path = source.path;
+          }
+          if (typeof source.url === 'string') {
+            sourceArgs.url = source.url;
+          }
+          if (source.pages !== undefined) {
+            sourceArgs.pages = source.pages;
+          }
+
+          return collectImages(
+            sourceArgs,
             source.path ?? source.url ?? 'unknown source',
-            allow_full_document ?? false
-          )
-        )
+            allowFullDocument
+          );
+        })
       );
       results.push(...batchResults);
+
+      if (results.length >= sources.length && results.every((result) => !result.success)) {
+        break;
+      }
     }
 
     if (results.every((r) => !r.success)) {

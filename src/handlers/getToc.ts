@@ -1,10 +1,10 @@
 import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { loadPdfDocument } from '../pdf/loader.js';
 import { getTocArgsSchema } from '../schemas/getToc.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
 import type { PdfSourceTocResult, PdfTocItem } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
+import { withPdfDocument } from '../utils/pdfLifecycle.js';
 
 type OutlineEntry = {
   title?: string;
@@ -75,50 +75,50 @@ const flattenOutline = async (
   return items;
 };
 
+const buildLoadArgs = (source: PdfSource) => ({
+  ...(source.path ? { path: source.path } : {}),
+  ...(source.url ? { url: source.url } : {}),
+});
+
+const buildTocResult = (
+  sourceDescription: string,
+  outline: OutlineEntry[] | null,
+  tocItems: PdfTocItem[]
+): PdfSourceTocResult => ({
+  source: sourceDescription,
+  success: true,
+  data: {
+    has_outline: Boolean(outline && outline.length > 0),
+    toc: tocItems,
+  },
+});
+
 const processToc = async (
   source: PdfSource,
   sourceDescription: string
 ): Promise<PdfSourceTocResult> => {
-  let pdfDocument: pdfjsLib.PDFDocumentProxy | null = null;
-  let result: PdfSourceTocResult = { source: sourceDescription, success: false };
+  const loadArgs = buildLoadArgs(source);
 
   try {
-    const loadArgs = {
-      ...(source.path ? { path: source.path } : {}),
-      ...(source.url ? { url: source.url } : {}),
-    };
-    pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
+    const { outline, tocItems } = await withPdfDocument(
+      loadArgs,
+      sourceDescription,
+      async (pdfDocument) => {
+        const outline = await pdfDocument.getOutline();
+        const tocItems = await flattenOutline(pdfDocument, outline, sourceDescription);
+        return { outline, tocItems };
+      }
+    );
 
-    const outline = await pdfDocument.getOutline();
-    const tocItems = await flattenOutline(pdfDocument, outline, sourceDescription);
-
-    result = {
-      source: sourceDescription,
-      success: true,
-      data: {
-        has_outline: Boolean(outline && outline.length > 0),
-        toc: tocItems,
-      },
-    };
+    return buildTocResult(sourceDescription, outline, tocItems);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    result = {
+    return {
       source: sourceDescription,
       success: false,
       error: `Failed to load table of contents for ${sourceDescription}. Reason: ${message}`,
     };
-  } finally {
-    if (pdfDocument && typeof pdfDocument.destroy === 'function') {
-      try {
-        await pdfDocument.destroy();
-      } catch (destroyError: unknown) {
-        const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-        logger.warn('Error destroying PDF document', { sourceDescription, error: message });
-      }
-    }
   }
-
-  return result;
 };
 
 export const pdfGetToc = tool()

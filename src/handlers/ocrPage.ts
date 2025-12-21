@@ -5,8 +5,8 @@ import type { OcrResult } from '../types/pdf.js';
 import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
-import { performOcr } from '../utils/ocr.js';
 import type { OcrProviderOptions } from '../utils/ocr.js';
+import { performOcr, sanitizeProviderOptions } from '../utils/ocr.js';
 import { withPdfDocument } from '../utils/pdfLifecycle.js';
 
 const logger = createLogger('OcrPage');
@@ -79,42 +79,55 @@ const performPageOcr = async (
   });
 };
 
+const executeOcrPage = async (input: {
+  source: { path?: string; url?: string };
+  page: number;
+  scale?: number;
+  provider?: OcrProviderOptions;
+  cache?: boolean;
+}) => {
+  const { source, page, scale, provider, cache } = input;
+  const sourceDescription = source.path ?? source.url ?? 'unknown source';
+  const providerOptions = sanitizeProviderOptions(provider);
+
+  try {
+    const result = await performPageOcr(
+      {
+        ...(source.path ? { path: source.path } : {}),
+        ...(source.url ? { url: source.url } : {}),
+      },
+      sourceDescription,
+      page,
+      scale,
+      providerOptions,
+      cache !== false
+    );
+    return [text(JSON.stringify(result, null, 2))];
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to OCR page', { sourceDescription, page, error: message });
+    return toolError(`Failed to OCR page from ${sourceDescription}. Reason: ${message}`);
+  }
+};
+
 export const pdfOcrPage = tool()
   .description(
     'Perform OCR on a rendered PDF page with optional provider configuration and caching.'
   )
   .input(ocrPageArgsSchema)
   .handler(async ({ input }) => {
-    const { source, page, scale, provider, cache } = input;
-    const sourceDescription = source.path ?? source.url ?? 'unknown source';
-    const providerOptions: OcrProviderOptions | undefined = provider
-      ? {
-          ...(provider.name ? { name: provider.name } : {}),
-          ...(provider.type === 'http' || provider.type === 'mock' ? { type: provider.type } : {}),
-          ...(provider.endpoint ? { endpoint: provider.endpoint } : {}),
-          ...(provider.api_key ? { api_key: provider.api_key } : {}),
-          ...(provider.model ? { model: provider.model } : {}),
-          ...(provider.language ? { language: provider.language } : {}),
-          ...(provider.extras ? { extras: provider.extras } : {}),
-        }
-      : undefined;
+    const { source, provider, cache, page, scale } = input;
+    const sourceArgs = {
+      ...(source.path ? { path: source.path } : {}),
+      ...(source.url ? { url: source.url } : {}),
+    };
+    const sanitizedProvider = sanitizeProviderOptions(provider);
 
-    try {
-      const result = await performPageOcr(
-        {
-          ...(source.path ? { path: source.path } : {}),
-          ...(source.url ? { url: source.url } : {}),
-        },
-        sourceDescription,
-        page,
-        scale,
-        providerOptions,
-        cache !== false
-      );
-      return [text(JSON.stringify(result, null, 2))];
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to OCR page', { sourceDescription, page, error: message });
-      return toolError(`Failed to OCR page from ${sourceDescription}. Reason: ${message}`);
-    }
+    return executeOcrPage({
+      page,
+      ...(scale !== undefined ? { scale } : {}),
+      ...(cache !== undefined ? { cache } : {}),
+      ...(sanitizedProvider ? { provider: sanitizedProvider } : {}),
+      source: sourceArgs,
+    });
   });

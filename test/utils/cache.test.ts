@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  buildOcrProviderKey,
-  clearCache,
-  getCachedOcrText,
-  setCachedOcrText,
-} from '../../src/utils/cache.js';
+import { buildOcrProviderKey, clearCache, getCachedOcrText, setCachedOcrText } from '../../src/utils/cache.js';
 
 const fingerprint = 'fingerprint-123';
 const targetBase = 'image-1-0';

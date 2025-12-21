@@ -1,6 +1,6 @@
-import { array, bool, description, object, optional, type InferOutput } from '@sylphx/vex';
-import { pdfSourceSchema } from './pdfSource.js';
+import { array, bool, description, type InferOutput, object, optional } from '@sylphx/vex';
 import type { PdfMetadataSummary, PdfSourceMetadataResult } from '../types/pdf.js';
+import { pdfSourceSchema } from './pdfSource.js';
 
 export const getMetadataArgsSchema = object({
   sources: array(pdfSourceSchema),

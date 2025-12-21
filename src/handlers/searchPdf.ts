@@ -108,6 +108,49 @@ const getPageLabelsSafe = async (
   return null;
 };
 
+const collectPageHitData = async (
+  pdfDocument: pdfjsLib.PDFDocumentProxy,
+  pageNum: number,
+  sourceDescription: string,
+  options: SearchOptions
+) => {
+  const items = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
+  return buildNormalizedPageText(items, {
+    preserveWhitespace: options.preserveWhitespace,
+    trimLines: options.trimLines,
+    ...(options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}),
+  });
+};
+
+const buildPageHits = (
+  normalizedText: ReturnType<typeof buildNormalizedPageText>,
+  pageNum: number,
+  pageLabels: string[] | null,
+  options: SearchOptions,
+  remaining: number
+): PdfSearchHit[] => {
+  const matches = options.useRegex
+    ? findRegexMatches(normalizedText.text ?? '', options.query, options, remaining)
+    : findPlainMatches(normalizedText.text ?? '', options.query, options, remaining);
+
+  return matches.map((match) => {
+    const segments = buildContextSegments(
+      normalizedText.text ?? '',
+      match.index,
+      match.match.length,
+      options.contextChars
+    );
+
+    return {
+      page_number: pageNum,
+      page_index: pageNum - 1,
+      page_label: pageLabels?.[pageNum - 1] ?? null,
+      match: match.match,
+      ...segments,
+    };
+  });
+};
+
 const collectPageHits = async (
   pdfDocument: pdfjsLib.PDFDocumentProxy,
   pagesToProcess: number[],
@@ -123,14 +166,7 @@ const collectPageHits = async (
       break;
     }
 
-    const items = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
-    const normalized = buildNormalizedPageText(items, {
-      preserveWhitespace: options.preserveWhitespace,
-      trimLines: options.trimLines,
-      ...(options.maxCharsPerPage !== undefined
-        ? { maxCharsPerPage: options.maxCharsPerPage }
-        : {}),
-    });
+    const normalized = await collectPageHitData(pdfDocument, pageNum, sourceDescription, options);
 
     if (normalized.truncated) {
       truncatedPages.push(pageNum);
@@ -141,27 +177,7 @@ const collectPageHits = async (
     }
 
     const remaining = options.maxHits - hits.length;
-    const matches = options.useRegex
-      ? findRegexMatches(normalized.text, options.query, options, remaining)
-      : findPlainMatches(normalized.text, options.query, options, remaining);
-
-    const pageHits = matches.map((match) => {
-      const segments = buildContextSegments(
-        normalized.text,
-        match.index,
-        match.match.length,
-        options.contextChars
-      );
-
-      return {
-        page_number: pageNum,
-        page_index: pageNum - 1,
-        page_label: pageLabels?.[pageNum - 1] ?? null,
-        match: match.match,
-        ...segments,
-      };
-    });
-
+    const pageHits = buildPageHits(normalized, pageNum, pageLabels, options, remaining);
     hits.push(...pageHits);
   }
 

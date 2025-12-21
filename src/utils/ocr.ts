@@ -1,12 +1,22 @@
 export interface OcrProviderOptions {
-  name?: string;
-  type?: 'http' | 'mock';
-  endpoint?: string;
-  api_key?: string;
-  model?: string;
-  language?: string;
-  extras?: Record<string, unknown>;
+  name?: string | undefined;
+  type?: 'http' | 'mock' | undefined;
+  endpoint?: string | undefined;
+  api_key?: string | undefined;
+  model?: string | undefined;
+  language?: string | undefined;
+  extras?: Record<string, unknown> | undefined;
 }
+
+export type LooseOcrProviderOptions = {
+  name?: string | undefined;
+  type?: string | undefined;
+  endpoint?: string | undefined;
+  api_key?: string | undefined;
+  model?: string | undefined;
+  language?: string | undefined;
+  extras?: Record<string, unknown> | undefined;
+};
 
 interface OcrResult {
   provider: string;
@@ -63,6 +73,26 @@ const handleHttpOcr = async (
     provider: provider.name ?? 'http',
     text,
   };
+};
+
+export const sanitizeProviderOptions = (
+  provider?: LooseOcrProviderOptions
+): OcrProviderOptions | undefined => {
+  if (!provider) {
+    return undefined;
+  }
+
+  const sanitized: OcrProviderOptions = {};
+
+  if (typeof provider.name === 'string') sanitized.name = provider.name;
+  if (provider.type === 'http' || provider.type === 'mock') sanitized.type = provider.type;
+  if (typeof provider.endpoint === 'string') sanitized.endpoint = provider.endpoint;
+  if (typeof provider.api_key === 'string') sanitized.api_key = provider.api_key;
+  if (typeof provider.model === 'string') sanitized.model = provider.model;
+  if (typeof provider.language === 'string') sanitized.language = provider.language;
+  if (provider.extras) sanitized.extras = provider.extras;
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
 };
 
 export const performOcr = async (

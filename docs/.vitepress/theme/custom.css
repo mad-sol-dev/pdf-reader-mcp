@@ -172,7 +172,7 @@
    ========================================== */
 .VPNav {
   backdrop-filter: blur(16px) saturate(180%);
-  background: rgba(10, 10, 15, 0.8) !important;
+  background: rgba(10, 10, 15, 0.8);
   border-bottom: 1px solid rgba(139, 92, 246, 0.1);
 }
 
@@ -228,7 +228,7 @@
 div[class*="language-"] {
   border-radius: 12px;
   border: 1px solid rgba(139, 92, 246, 0.1);
-  background: rgba(17, 17, 24, 0.8) !important;
+  background: rgba(17, 17, 24, 0.8);
 }
 
 div[class*="language-"]::before {

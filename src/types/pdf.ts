@@ -50,6 +50,25 @@ export interface PdfSourceResult {
   error?: string;
 }
 
+export interface PageStat {
+  page: number;
+  text_length: number;
+  image_count: number;
+}
+
+export interface PdfPageStats {
+  num_pages: number;
+  page_stats: PageStat[];
+  warnings?: string[];
+}
+
+export interface PdfSourcePageStatsResult {
+  source: string;
+  success: boolean;
+  data?: PdfPageStats | undefined;
+  error?: string;
+}
+
 export interface PdfSource {
   path?: string | undefined;
   url?: string | undefined;

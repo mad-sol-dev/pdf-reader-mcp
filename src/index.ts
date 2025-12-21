@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 
 import { createServer, stdio } from '@sylphx/mcp-server-sdk';
+import { pdfGetMetadata } from './handlers/getMetadata.js';
+import { pdfGetPageStats } from './handlers/getPageStats.js';
 import { readPdf } from './handlers/readPdf.js';
 
 const server = createServer({
   name: 'pdf-reader-mcp',
   version: '1.3.0',
   instructions:
-    'MCP Server for reading PDF files and extracting text, metadata, images, and page information.',
-  tools: { read_pdf: readPdf },
+    'PDF toolkit for MCP clients: retrieve metadata, compute page statistics, and extract text/images (read_pdf maintained for compatibility).',
+  tools: {
+    pdf_get_metadata: pdfGetMetadata,
+    pdf_get_page_stats: pdfGetPageStats,
+    read_pdf: readPdf,
+  },
   transport: stdio(),
 });
 

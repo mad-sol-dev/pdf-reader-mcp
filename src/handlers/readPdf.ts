@@ -27,6 +27,7 @@ const processSingleSource = async (
     includeImages: boolean;
   }
 ): Promise<PdfSourceResult> => {
+  const MAX_CONCURRENT_PAGES = 5;
   const sourceDescription = source.path ?? source.url ?? 'unknown source';
   let individualResult: PdfSourceResult = { source: sourceDescription, success: false };
   let pdfDocument: pdfjsLib.PDFDocumentProxy | null = null;
@@ -65,16 +66,29 @@ const processSingleSource = async (
     // Extract content with ordering preserved
     if (pagesToProcess.length > 0) {
       // Use new extractPageContent to preserve Y-coordinate ordering
-      const pageContents = await Promise.all(
-        pagesToProcess.map((pageNum) =>
-          extractPageContent(
-            pdfDocument as pdfjsLib.PDFDocumentProxy,
-            pageNum,
-            options.includeImages,
-            sourceDescription
-          )
-        )
+      // Process pages with a concurrency limit to avoid excessive memory usage
+      const pageContents: Array<Awaited<ReturnType<typeof extractPageContent>>> = new Array(
+        pagesToProcess.length
       );
+
+      for (let i = 0; i < pagesToProcess.length; i += MAX_CONCURRENT_PAGES) {
+        const batch = pagesToProcess.slice(i, i + MAX_CONCURRENT_PAGES);
+
+        const batchResults = await Promise.all(
+          batch.map((pageNum) =>
+            extractPageContent(
+              pdfDocument as pdfjsLib.PDFDocumentProxy,
+              pageNum,
+              options.includeImages,
+              sourceDescription
+            )
+          )
+        );
+
+        batchResults.forEach((items, idx) => {
+          pageContents[i + idx] = items;
+        });
+      }
 
       // Store page contents for ordered retrieval
       output.page_contents = pageContents.map((items, idx) => ({

@@ -80,6 +80,62 @@ export interface PdfSourcePagesResult {
   error?: string;
 }
 
+export interface PdfImageInfo {
+  page: number;
+  index: number;
+  width: number;
+  height: number;
+  format: string;
+}
+
+export interface PdfImageListData {
+  images: PdfImageInfo[];
+  total_images: number;
+  warnings?: string[];
+}
+
+export interface PdfImageListResult {
+  source: string;
+  success: boolean;
+  data?: PdfImageListData | undefined;
+  error?: string;
+}
+
+export interface PdfRenderResult {
+  source: string;
+  success: boolean;
+  data?: {
+    page: number;
+    width: number;
+    height: number;
+    scale: number;
+    fingerprint: string;
+    image_base64: string;
+  };
+  error?: string;
+}
+
+export interface OcrResult {
+  source: string;
+  success: boolean;
+  data?: {
+    text: string;
+    provider: string;
+    fingerprint: string;
+    from_cache: boolean;
+    page?: number;
+    image?: { page: number; index: number };
+  };
+  error?: string;
+}
+
+export interface CacheStats {
+  text_entries: number;
+  ocr_entries: number;
+  text_keys: string[];
+  ocr_keys: string[];
+}
+
 export interface PdfSourceMetadataResult {
   source: string;
   success: boolean;

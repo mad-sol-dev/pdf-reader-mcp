@@ -49,7 +49,14 @@ const performImageOcr = async (
     const cached = useCache ? getCachedOcrText(fingerprint, cacheKey) : undefined;
 
     if (cached) {
-      return buildCachedResult(sourceDescription, fingerprint, page, index, provider?.name, cached);
+      return buildCachedResult(
+        sourceDescription,
+        fingerprint,
+        page,
+        index,
+        cached.provider,
+        cached.text
+      );
     }
 
     const images = await extractImages(pdfDocument, [page]);
@@ -60,7 +67,7 @@ const performImageOcr = async (
     }
 
     const ocr = await performOcr(target.data, provider);
-    setCachedOcrText(fingerprint, cacheKey, ocr.text);
+    setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
     return {
       source: sourceDescription,

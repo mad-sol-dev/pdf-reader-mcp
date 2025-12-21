@@ -319,7 +319,7 @@ npm install -g @sylphx/pdf-reader-mcp
 ```
 
 **Other Improvements:**
-- 🐛 Fixed Zod validation error handling
+- 🐛 Improved request validation error handling
 - 📦 Updated all dependencies to latest versions
 - ✅ 103 tests passing, 94%+ coverage maintained
 
@@ -744,17 +744,17 @@ Restart MCP client completely.
 |:----------|:-----------|
 | **Runtime** | Node.js 22+ ESM |
 | **PDF Engine** | PDF.js (Mozilla) |
-| **Validation** | Zod + JSON Schema |
+| **Validation** | @sylphx/vex |
 | **Protocol** | MCP SDK |
 | **Language** | TypeScript (strict) |
-| **Testing** | Bun + Vitest |
+| **Testing** | Bun test runner |
 | **Quality** | Biome |
 | **CI/CD** | GitHub Actions |
 
 ### Design Principles
 
 - 🔒 **Security First** - Flexible paths with secure defaults
-- 🎯 **Simple Interface** - One tool, all operations
+- 🎯 **Targeted Tools** - Specialized handlers for metadata, navigation, search, render, OCR, with `read_pdf` kept for compatibility
 - ⚡ **Performance** - Parallel processing, efficient memory
 - 🛡️ **Reliability** - Per-page isolation, detailed errors
 - 🧪 **Quality** - 94%+ coverage, strict TypeScript
@@ -792,7 +792,7 @@ bun run benchmark   # Performance tests
 ```
 
 **Quality:**
-- ✅ Comprehensive tests via Bun + Vitest
+- ✅ Comprehensive tests via Bun test runner
 - ✅ High coverage enforced in CI
 - ✅ Automated linting and formatting with Biome
 - ✅ Strict TypeScript configuration

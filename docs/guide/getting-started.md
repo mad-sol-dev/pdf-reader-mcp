@@ -176,7 +176,13 @@ Responds with page dimensions, scale, fingerprint, and a PNG part for the render
   "source": { "path": "./docs/report.pdf" },
   "page": 5,
   "scale": 1.5,
-  "provider": { "type": "openai", "model": "gpt-4o-mini" },
+  "provider": {
+    "type": "http",
+    "endpoint": "https://example-ocr.internal/v1/ocr",
+    "api_key": "sk-ocr-demo",
+    "model": "vision-large",
+    "language": "en"
+  },
   "cache": true
 }
 ```

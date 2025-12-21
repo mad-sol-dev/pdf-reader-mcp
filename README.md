@@ -459,6 +459,36 @@ Runs OCR against a rendered page with provider overrides and caching.
 
 **Output:** `text`, `provider`, `fingerprint`, `from_cache`, and `page` identifiers.
 
+**OCR provider configuration:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `mock` (default placeholder text) or `http` (send JSON request). |
+| `endpoint` | string | Required when `type` is `http`; URL that accepts a POST JSON payload. |
+| `api_key` | string | Optional; sets `Authorization: Bearer <api_key>`. |
+| `model` | string | Optional model hint forwarded to the HTTP OCR service. |
+| `language` | string | Optional language hint forwarded to the OCR service. |
+| `extras` | object | Optional free-form settings forwarded in the HTTP payload. |
+
+**HTTP OCR payload shape:**
+
+```json
+{
+  "source": { "path": "./docs/report.pdf" },
+  "page": 5,
+  "provider": {
+    "type": "http",
+    "endpoint": "https://example-ocr.internal/v1/ocr",
+    "api_key": "sk-ocr-demo",
+    "model": "vision-large",
+    "language": "en",
+    "extras": { "detect_tables": true }
+  }
+}
+```
+
+The service receives `{ "image": "<base64 PNG>", "model": "vision-large", "language": "en", "extras": { "detect_tables": true } }` and must respond with `{ "text": "..." }` (or `{ "ocr": "..." }`).
+
 ### `pdf_ocr_image` — OCR a single image
 
 Targets one embedded image for OCR without rasterizing the full page again.

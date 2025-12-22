@@ -3,6 +3,8 @@ build/
 *.log
 coverage/
 .env*
+.mcp.json
+docs/sessions/
 
 # VitePress
 docs/.vitepress/cache

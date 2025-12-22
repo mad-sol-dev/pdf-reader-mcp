@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "pdf-reader-dev": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/path/to/pdf-reader-mcp/dist/index.js"],
+      "env": {
+        "DEBUG_MCP": "true"
+      }
+    }
+  }
+}

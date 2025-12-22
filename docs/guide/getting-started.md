@@ -14,6 +14,21 @@ The PDF Reader MCP server ships a focused toolkit of specialized tools instead o
 
 ## Tool-by-tool examples
 
+## Path safety and configuration
+
+Local file paths are resolved against a base directory (defaults to the server CWD). Resolved paths must remain within the configured allowlist unless you explicitly opt in to unsafe absolute paths.
+
+```bash
+# Base directory for resolving relative paths (default: CWD)
+export PDF_BASE_DIR="/path/to/documents"
+
+# Allowlist of roots (path-delimited: ":" on Unix, ";" on Windows)
+export PDF_ALLOWED_PATHS="/path/to/documents:/mnt/pdfs"
+
+# Opt-in to allow absolute paths outside the allowlist (unsafe)
+export PDF_ALLOW_UNSAFE_ABSOLUTE="true"
+```
+
 ### Metadata & navigation
 
 **`pdf_get_metadata` — document probe**

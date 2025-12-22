@@ -686,6 +686,20 @@ Response Order:
 { "path": "./2024/Q1.pdf" }
 ```
 
+**Path security defaults** - Resolved paths must stay within the configured allowlist (defaults to the server CWD).
+
+**Environment overrides:**
+```bash
+# Base directory for resolving relative paths (default: CWD)
+export PDF_BASE_DIR="/path/to/documents"
+
+# Allowlist of roots (path-delimited: ":" on Unix, ";" on Windows)
+export PDF_ALLOWED_PATHS="/path/to/documents:/mnt/pdfs"
+
+# Opt-in to allow absolute paths outside the allowlist (unsafe)
+export PDF_ALLOW_UNSAFE_ABSOLUTE="true"
+```
+
 **Configure working directory:**
 ```json
 {

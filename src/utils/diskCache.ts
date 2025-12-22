@@ -11,6 +11,8 @@ import type { OcrDiskCache, OcrImageResult, OcrPageResult } from '../types/cache
 import { createLogger } from './logger.js';
 
 const logger = createLogger('DiskCache');
+const LOCK_RETRY_MS = 25;
+const LOCK_TIMEOUT_MS = 5_000;
 
 /**
  * Generate cache file path from PDF path
@@ -57,34 +59,102 @@ export const loadOcrCache = (pdfPath: string): OcrDiskCache | null => {
   }
 };
 
+const sleepSync = (ms: number): void => {
+  const array = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(array, 0, 0, ms);
+};
+
+const acquireCacheLock = (lockPath: string): number => {
+  const start = Date.now();
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      return fs.openSync(lockPath, 'wx');
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+
+      if (err.code === 'EEXIST') {
+        if (Date.now() - start > LOCK_TIMEOUT_MS) {
+          throw new Error(`Timed out waiting for cache lock at ${lockPath}`);
+        }
+
+        sleepSync(LOCK_RETRY_MS);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+};
+
+const releaseCacheLock = (lockPath: string, fd: number): void => {
+  fs.closeSync(fd);
+  fs.rmSync(lockPath, { force: true });
+};
+
+const writeCacheFile = (cachePath: string, cache: OcrDiskCache): void => {
+  cache.updated_at = new Date().toISOString();
+
+  // Ensure directory exists
+  const dir = path.dirname(cachePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(cache, null, 2), 'utf-8');
+  fs.renameSync(tempPath, cachePath);
+};
+
+const mergeCaches = (existing: OcrDiskCache | null, incoming: OcrDiskCache): OcrDiskCache => {
+  const now = new Date().toISOString();
+
+  if (existing && existing.fingerprint === incoming.fingerprint) {
+    return {
+      ...existing,
+      ...incoming,
+      created_at: existing.created_at,
+      updated_at: now,
+      pages: { ...existing.pages, ...incoming.pages },
+      images: { ...existing.images, ...incoming.images },
+    } satisfies OcrDiskCache;
+  }
+
+  return {
+    ...incoming,
+    created_at: incoming.created_at ?? existing?.created_at ?? now,
+    updated_at: now,
+    pages: incoming.pages ?? {},
+    images: incoming.images ?? {},
+  } satisfies OcrDiskCache;
+};
+
 /**
  * Save OCR cache to disk
  */
 export const saveOcrCache = (pdfPath: string, cache: OcrDiskCache): void => {
   const cachePath = getCacheFilePath(pdfPath);
+  const lockPath = `${cachePath}.lock`;
+  const lockFd = acquireCacheLock(lockPath);
 
   try {
-    // Update timestamp
-    cache.updated_at = new Date().toISOString();
+    const latest = loadOcrCache(pdfPath);
+    const merged = mergeCaches(latest, cache);
 
-    // Ensure directory exists
-    const dir = path.dirname(cachePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    // Write with formatting for readability
-    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf-8');
+    writeCacheFile(cachePath, merged);
 
     logger.debug('Saved OCR cache to disk', {
       cachePath,
-      pageCount: Object.keys(cache.pages).length,
-      imageCount: Object.keys(cache.images).length,
+      pageCount: Object.keys(merged.pages).length,
+      imageCount: Object.keys(merged.images).length,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error('Failed to save OCR cache', { cachePath, error: message });
     throw new Error(`Failed to save OCR cache: ${message}`);
+  } finally {
+    releaseCacheLock(lockPath, lockFd);
   }
 };
 

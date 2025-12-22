@@ -1,9 +1,9 @@
+import type { Server } from 'node:http';
+import { Mistral } from '@mistralai/mistralai';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import express, { NextFunction, Request, Response } from 'express';
-import { Server } from 'http';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import morgan from 'morgan';
-import { Mistral } from '@mistralai/mistralai';
 
 dotenv.config();
 
@@ -98,7 +98,7 @@ const normalizeExtras = (extras?: OcrExtras): OcrExtras | undefined => {
 };
 
 const validateRequest = (
-  body: OcrRequestBody,
+  body: OcrRequestBody
 ): { errors: string[]; payload?: Required<Pick<OcrRequestBody, 'image'>> & OcrRequestBody } => {
   const errors: string[] = [];
 
@@ -130,7 +130,7 @@ const validateRequest = (
   return {
     errors,
     payload: {
-      image: body.image!.trim(),
+      image: body.image?.trim(),
       language: body.language?.trim(),
       model: body.model?.trim(),
       extras: normalizeExtras(body.extras),
@@ -185,16 +185,23 @@ app.post('/v1/ocr', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-app.use((err: { statusCode?: number; message?: string }, _req: Request, res: Response, _next: NextFunction) => {
-  if (res.headersSent) {
-    return;
+app.use(
+  (
+    err: { statusCode?: number; message?: string },
+    _req: Request,
+    res: Response,
+    _next: NextFunction
+  ) => {
+    if (res.headersSent) {
+      return;
+    }
+
+    const status = err?.statusCode && Number.isInteger(err.statusCode) ? err.statusCode : 500;
+    const message = err?.message || 'Internal server error';
+
+    res.status(status).json({ error: message });
   }
-
-  const status = err?.statusCode && Number.isInteger(err.statusCode) ? err.statusCode : 500;
-  const message = err?.message || 'Internal server error';
-
-  res.status(status).json({ error: message });
-});
+);
 
 const port = parsePort(process.env.PORT);
 let server: Server;

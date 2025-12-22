@@ -1,16 +1,16 @@
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ErrorCode, PdfError } from '../src/utils/errors.js';
-import { PROJECT_ROOT, getPathGuardConfig, resolvePath } from '../src/utils/pathUtils.js';
+import { getPathGuardConfig, PROJECT_ROOT, resolvePath } from '../src/utils/pathUtils.js';
 
 describe('resolvePath Utility', () => {
   const envBackup = { ...process.env };
 
   beforeEach(() => {
     process.env = { ...envBackup };
-    delete process.env.PDF_ALLOWED_PATHS;
-    delete process.env.PDF_BASE_DIR;
-    delete process.env.PDF_ALLOW_UNSAFE_ABSOLUTE;
+    process.env.PDF_ALLOWED_PATHS = undefined;
+    process.env.PDF_BASE_DIR = undefined;
+    process.env.PDF_ALLOW_UNSAFE_ABSOLUTE = undefined;
   });
 
   afterEach(() => {
@@ -77,19 +77,14 @@ describe('resolvePath Utility', () => {
 
   it('should allow paths within a custom allowed root', () => {
     const customRoot =
-      path.sep === '/'
-        ? path.join(path.sep, 'tmp', 'pdf-reader-root')
-        : path.join('C:\\', 'temp', 'pdf-reader-root');
+      path.sep === '/' ? path.join(path.sep, 'tmp', 'pdf-reader-root') : path.join('C:\\', 'temp', 'pdf-reader-root');
     const userPath = path.join('nested', 'file.txt');
     const resolved = resolvePath(userPath, { baseDir: customRoot, allowedRoots: [customRoot] });
     expect(resolved).toBe(path.resolve(customRoot, userPath));
   });
 
   it('should use environment allowlist when no options are provided', () => {
-    const allowedRoot =
-      path.sep === '/'
-        ? path.join(path.sep, 'var', 'pdf-root')
-        : path.join('C:\\', 'pdf-root');
+    const allowedRoot = path.sep === '/' ? path.join(path.sep, 'var', 'pdf-root') : path.join('C:\\', 'pdf-root');
     process.env.PDF_ALLOWED_PATHS = allowedRoot;
     process.env.PDF_BASE_DIR = allowedRoot;
 

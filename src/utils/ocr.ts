@@ -1,6 +1,8 @@
+import { Mistral } from '@mistralai/mistralai';
+
 export interface OcrProviderOptions {
   name?: string | undefined;
-  type?: 'http' | 'mock' | 'mistral' | undefined;
+  type?: 'http' | 'mock' | 'mistral' | 'mistral-ocr' | undefined;
   endpoint?: string | undefined;
   api_key?: string | undefined;
   model?: string | undefined;
@@ -118,7 +120,7 @@ const handleMistralOcr = async (
   base64Image: string,
   provider: OcrProviderOptions
 ): Promise<OcrResult> => {
-  const apiKey = provider.api_key ?? process.env.MISTRAL_API_KEY;
+  const apiKey = provider.api_key ?? process.env['MISTRAL_API_KEY'];
   if (!apiKey) {
     throw new Error('Mistral OCR provider requires MISTRAL_API_KEY.');
   }
@@ -128,17 +130,17 @@ const handleMistralOcr = async (
     ? base64Image
     : `data:image/png;base64,${base64Image}`;
   const prompt =
-    (provider.extras && typeof provider.extras.prompt === 'string'
-      ? provider.extras.prompt
+    (provider.extras && typeof provider.extras['prompt'] === 'string'
+      ? provider.extras['prompt']
       : undefined) ??
     'Extract and transcribe all text from this image. Preserve layout and return markdown.';
   const temperature =
-    provider.extras && typeof provider.extras.temperature === 'string'
-      ? Number.parseFloat(provider.extras.temperature)
+    provider.extras && typeof provider.extras['temperature'] === 'string'
+      ? Number.parseFloat(provider.extras['temperature'])
       : undefined;
   const maxTokens =
-    provider.extras && typeof provider.extras.max_tokens === 'string'
-      ? Number.parseInt(provider.extras.max_tokens, 10)
+    provider.extras && typeof provider.extras['max_tokens'] === 'string'
+      ? Number.parseInt(provider.extras['max_tokens'], 10)
       : undefined;
 
   const response = await fetchWithTimeout(
@@ -184,7 +186,10 @@ const handleMistralOcr = async (
   if (typeof content === 'string') {
     text = content;
   } else if (Array.isArray(content)) {
-    text = content.map((chunk) => chunk.text).filter(Boolean).join('');
+    text = content
+      .map((chunk) => chunk.text)
+      .filter(Boolean)
+      .join('');
   }
 
   if (!text) {
@@ -197,6 +202,58 @@ const handleMistralOcr = async (
   };
 };
 
+const handleMistralOcrDedicated = async (
+  base64Image: string,
+  provider: OcrProviderOptions
+): Promise<OcrResult> => {
+  const apiKey = provider.api_key ?? process.env['MISTRAL_API_KEY'];
+  if (!apiKey) {
+    throw new Error('Mistral OCR provider requires MISTRAL_API_KEY.');
+  }
+
+  const client = new Mistral({ apiKey });
+  const payload = base64Image.startsWith('data:') ? (base64Image.split(',')[1] ?? '') : base64Image;
+  const buffer = Buffer.from(payload, 'base64');
+  const tableFormat =
+    provider.extras && typeof provider.extras['tableFormat'] === 'string'
+      ? provider.extras['tableFormat']
+      : 'markdown';
+
+  let uploadedId: string | undefined;
+
+  try {
+    const uploaded = await client.files.upload({
+      file: { fileName: 'page.png', content: buffer },
+      purpose: 'ocr',
+    });
+    uploadedId = uploaded.id;
+
+    const result = await client.ocr.process({
+      model: provider.model ?? 'mistral-ocr-latest',
+      document: { fileId: uploadedId },
+      tableFormat,
+    });
+    const text = result.pages?.[0]?.markdown;
+
+    if (!text) {
+      throw new Error('Mistral OCR response missing text field.');
+    }
+
+    return {
+      provider: provider.name ?? 'mistral-ocr',
+      text,
+    };
+  } finally {
+    if (uploadedId) {
+      try {
+        await client.files.delete({ fileId: uploadedId });
+      } catch {
+        // Ignore cleanup failures to preserve original errors.
+      }
+    }
+  }
+};
+
 export const sanitizeProviderOptions = (
   provider?: LooseOcrProviderOptions
 ): OcrProviderOptions | undefined => {
@@ -207,7 +264,12 @@ export const sanitizeProviderOptions = (
   const sanitized: OcrProviderOptions = {};
 
   if (typeof provider.name === 'string') sanitized.name = provider.name;
-  if (provider.type === 'http' || provider.type === 'mock' || provider.type === 'mistral') {
+  if (
+    provider.type === 'http' ||
+    provider.type === 'mock' ||
+    provider.type === 'mistral' ||
+    provider.type === 'mistral-ocr'
+  ) {
     sanitized.type = provider.type;
   }
   if (typeof provider.endpoint === 'string') sanitized.endpoint = provider.endpoint;
@@ -234,6 +296,10 @@ export const performOcr = async (
 
   if (provider.type === 'mistral') {
     return handleMistralOcr(base64Image, provider);
+  }
+
+  if (provider.type === 'mistral-ocr') {
+    return handleMistralOcrDedicated(base64Image, provider);
   }
 
   throw new Error('Unsupported OCR provider configuration.');

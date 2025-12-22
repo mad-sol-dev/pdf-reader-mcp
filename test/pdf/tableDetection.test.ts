@@ -190,4 +190,72 @@ describe('detectTables', () => {
     // Should still detect the table, ignoring the image
     expect(tables).toBeDefined();
   });
+
+  it('should adapt to small font sizes with tighter columns', () => {
+    const items: PageContentItem[] = [];
+
+    for (let row = 0; row < 3; row++) {
+      const y = 100 - row * 12;
+      for (let col = 0; col < 3; col++) {
+        const x = 50 + col * 12;
+        items.push({
+          type: 'text',
+          yPosition: y,
+          xPosition: x,
+          fontSize: 8,
+          textContent: `R${row}C${col}`,
+        });
+      }
+    }
+
+    const tables = detectTables(items);
+
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.cols).toBeGreaterThanOrEqual(3);
+  });
+
+  it('should cap tolerance for very large font sizes', () => {
+    const items: PageContentItem[] = [];
+
+    for (let row = 0; row < 3; row++) {
+      const y = 120 - row * 30;
+      for (let col = 0; col < 3; col++) {
+        const x = 60 + col * 60;
+        items.push({
+          type: 'text',
+          yPosition: y,
+          xPosition: x,
+          fontSize: 200,
+          textContent: `R${row}C${col}`,
+        });
+      }
+    }
+
+    const tables = detectTables(items);
+
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.cols).toBe(3);
+  });
+
+  it('should stay robust when font sizes are missing', () => {
+    const items: PageContentItem[] = [];
+
+    for (let row = 0; row < 3; row++) {
+      const y = 140 - row * 20;
+      for (let col = 0; col < 3; col++) {
+        const x = 40 + col * 40;
+        items.push({
+          type: 'text',
+          yPosition: y,
+          xPosition: x,
+          textContent: `R${row}C${col}`,
+        });
+      }
+    }
+
+    const tables = detectTables(items);
+
+    expect(tables).toHaveLength(1);
+    expect(tables[0]?.rows).toBeGreaterThanOrEqual(3);
+  });
 });

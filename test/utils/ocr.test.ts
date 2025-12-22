@@ -1,6 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { performOcr } from '../../src/utils/ocr.js';
 
+const mistralMocks = vi.hoisted(() => {
+  const upload = vi.fn();
+  const process = vi.fn();
+  const remove = vi.fn();
+  const ctor = vi.fn().mockImplementation(() => ({
+    files: { upload, delete: remove },
+    ocr: { process },
+  }));
+
+  return { upload, process, remove, ctor };
+});
+
+vi.mock('@mistralai/mistralai', () => ({ Mistral: mistralMocks.ctor }));
+
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
@@ -9,7 +23,7 @@ describe('performOcr (mistral provider)', () => {
 
   beforeEach(() => {
     process.env = { ...envBackup };
-    delete process.env.MISTRAL_API_KEY;
+    process.env.MISTRAL_API_KEY = undefined;
     mockFetch.mockReset();
   });
 
@@ -19,9 +33,9 @@ describe('performOcr (mistral provider)', () => {
   });
 
   it('throws when MISTRAL_API_KEY is missing', async () => {
-    await expect(
-      performOcr('base64-image', { type: 'mistral' })
-    ).rejects.toThrow('Mistral OCR provider requires MISTRAL_API_KEY.');
+    await expect(performOcr('base64-image', { type: 'mistral' })).rejects.toThrow(
+      'Mistral OCR provider requires MISTRAL_API_KEY.'
+    );
   });
 
   it('times out Mistral requests and aborts fetch', async () => {
@@ -77,5 +91,78 @@ describe('performOcr (mistral provider)', () => {
         }),
       })
     );
+  });
+});
+
+describe('performOcr (mistral-ocr provider)', () => {
+  const envBackup = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...envBackup };
+    process.env.MISTRAL_API_KEY = undefined;
+    mistralMocks.upload.mockReset();
+    mistralMocks.process.mockReset();
+    mistralMocks.remove.mockReset();
+    mistralMocks.ctor.mockClear();
+  });
+
+  afterEach(() => {
+    process.env = { ...envBackup };
+  });
+
+  it('throws when MISTRAL_API_KEY is missing', async () => {
+    await expect(performOcr('base64-image', { type: 'mistral-ocr' })).rejects.toThrow(
+      'Mistral OCR provider requires MISTRAL_API_KEY.'
+    );
+  });
+
+  it('uploads image, processes OCR, and deletes the temp file', async () => {
+    process.env.MISTRAL_API_KEY = 'test-key';
+    mistralMocks.upload.mockResolvedValue({ id: 'file-123' });
+    mistralMocks.process.mockResolvedValue({
+      pages: [{ markdown: 'Extracted markdown' }],
+    });
+    mistralMocks.remove.mockResolvedValue({});
+
+    const result = await performOcr('YmFzZTY0LWltYWdl', {
+      type: 'mistral-ocr',
+      model: 'mistral-ocr-latest',
+      extras: { tableFormat: 'markdown' },
+    });
+
+    expect(result).toEqual({ provider: 'mistral-ocr', text: 'Extracted markdown' });
+    expect(mistralMocks.ctor).toHaveBeenCalledWith({ apiKey: 'test-key' });
+    expect(mistralMocks.upload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: 'ocr',
+        file: expect.objectContaining({
+          fileName: 'page.png',
+          content: expect.any(Buffer),
+        }),
+      })
+    );
+    expect(mistralMocks.process).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'mistral-ocr-latest',
+        document: { fileId: 'file-123' },
+        tableFormat: 'markdown',
+      })
+    );
+    expect(mistralMocks.remove).toHaveBeenCalledWith({ fileId: 'file-123' });
+  });
+
+  it('cleans up uploaded file when OCR processing fails', async () => {
+    process.env.MISTRAL_API_KEY = 'test-key';
+    mistralMocks.upload.mockResolvedValue({ id: 'file-456' });
+    mistralMocks.process.mockRejectedValue(new Error('OCR failed'));
+    mistralMocks.remove.mockResolvedValue({});
+
+    await expect(
+      performOcr('YmFzZTY0LWltYWdl', {
+        type: 'mistral-ocr',
+      })
+    ).rejects.toThrow('OCR failed');
+
+    expect(mistralMocks.remove).toHaveBeenCalledWith({ fileId: 'file-456' });
   });
 });

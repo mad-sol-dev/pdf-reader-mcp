@@ -29,6 +29,7 @@ export interface PageContentItem {
   type: 'text' | 'image';
   yPosition: number;
   xPosition?: number; // X-coordinate for table detection (text items only)
+  fontSize?: number; // Estimated font size when available
   textContent?: string;
   imageData?: ExtractedImage;
 }
@@ -128,6 +129,8 @@ export interface OcrResult {
     from_cache: boolean;
     page?: number;
     image?: { page: number; index: number };
+    skipped?: boolean;
+    reason?: string;
   };
   error?: string;
 }

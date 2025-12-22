@@ -299,6 +299,9 @@ npm install -g @sylphx/pdf-reader-mcp
 - 🎯 **Smart Pagination** - Extract ranges like "1-5,10-15,20"
 - 🖼️ **Multi-Format Images** - RGB, RGBA, Grayscale with automatic detection
 - 🛡️ **Path Flexibility** - Windows, Unix, and relative paths all supported (v1.3.0)
+- 🤖 **Smart OCR** - Automatically decides when OCR is needed to save API costs
+- 🧠 **Mistral OCR Provider** - Dedicated OCR model with structured output for complex layouts
+- 📊 **Dynamic Table Detection** - Better table extraction without extra configuration
 - 🔍 **Error Resilience** - Per-page error isolation with detailed messages
 - 📏 **Large File Support** - Efficient streaming and memory management
 - 📝 **Type Safe** - Full TypeScript with strict mode enabled
@@ -324,6 +327,8 @@ npm install -g @sylphx/pdf-reader-mcp
 
 **Other Improvements:**
 - 🐛 Improved request validation error handling
+- 🧾 Added Smart OCR and Mistral OCR provider support
+- 📊 Dynamic table detection for cleaner OCR tables
 - 📦 Updated all dependencies to latest versions
 - ✅ 103 tests passing, 94%+ coverage maintained
 

@@ -14,8 +14,8 @@ pre-commit:
       exclude: "dist/*"
       run: npx biome check {staged_files}
 
-    doctor:
-      run: ./node_modules/.bin/doctor check --pre-commit
+    test:
+      run: bun run test
 
 pre-push:
   commands:

@@ -28,7 +28,7 @@ async function testInsertMarkers() {
     const page1 = response1.results[0].data.pages[0];
 
     console.log('  Page 1 text preview (first 200 chars):');
-    console.log('  ' + page1.text.substring(0, 200).replace(/\n/g, '\\n'));
+    console.log(`  ${page1.text.substring(0, 200).replace(/\n/g, '\\n')}`);
     console.log('  Image indexes:', page1.image_indexes || 'none');
     console.log(
       '  Contains [IMAGE markers:',
@@ -50,7 +50,7 @@ async function testInsertMarkers() {
     const page2 = response2.results[0].data.pages[0];
 
     console.log('  Page 1 text preview (first 500 chars):');
-    console.log('  ' + page2.text.substring(0, 500).replace(/\n/g, '\n  '));
+    console.log(`  ${page2.text.substring(0, 500).replace(/\n/g, '\n  ')}`);
     console.log('\n  Image indexes:', page2.image_indexes || 'none');
     console.log(
       '  Contains [IMAGE markers:',

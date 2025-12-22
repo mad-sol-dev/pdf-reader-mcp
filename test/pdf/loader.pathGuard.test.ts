@@ -17,7 +17,7 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
 
 describe('loadPdfDocument path guard', () => {
   it('should reject traversal paths outside project root', async () => {
-    const userPath = '..' + path.sep + 'outside.pdf';
+    const userPath = `..${path.sep}outside.pdf`;
 
     await expect(loadPdfDocument({ path: userPath }, userPath)).rejects.toThrow(PdfError);
     expect(fs.readFile).not.toHaveBeenCalled();

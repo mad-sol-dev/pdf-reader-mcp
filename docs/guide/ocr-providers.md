@@ -70,6 +70,62 @@ npx tsx mistral-ocr-wrapper.ts
 }
 ```
 
+### Mistral OCR API (Dedicated - Best Quality)
+
+The dedicated Mistral OCR API provides superior quality for complex layouts, tables, and technical documents without building your own wrapper.
+
+**Mistral Vision vs. Mistral OCR**:
+- Vision (`type: "mistral"`) — fast, simple, chat-based, best for quick extraction.
+- OCR (`type: "mistral-ocr"`) — best quality, structured output, and specialized OCR model (3 API calls: upload → process → cleanup).
+
+**Trade-offs vs. Vision API**:
+- ✅ Dedicated OCR model (`mistral-ocr-latest`)
+- ✅ Structured output (markdown, tables, hyperlinks)
+- ✅ Better accuracy for complex layouts
+- ⚠️ Higher latency (3 API calls vs. 1)
+- ⚠️ More setup (direct API key, optional extras)
+
+**Provider config**:
+
+```json
+{
+  "type": "mistral-ocr",
+  "model": "mistral-ocr-latest",
+  "api_key": "sk-...",
+  "extras": {
+    "tableFormat": "markdown",
+    "extractHeader": true,
+    "extractFooter": true
+  }
+}
+```
+
+**Example usage**:
+
+```json
+{
+  "source": { "path": "./docs/report.pdf" },
+  "page": 5,
+  "provider": {
+    "type": "mistral-ocr",
+    "model": "mistral-ocr-latest",
+    "api_key": "sk-...",
+    "extras": { "tableFormat": "markdown" }
+  }
+}
+```
+
+**When to use**:
+- Complex tables and layouts
+- Technical diagrams with labels
+- Documents requiring high accuracy
+- When structure extraction matters
+
+**When to use Vision instead**:
+- Simple text extraction
+- Speed is critical
+- Lower cost requirements
+
 ### OpenAI Vision (similar pattern)
 
 ```typescript

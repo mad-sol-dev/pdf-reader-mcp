@@ -61,7 +61,9 @@ const fetchImage = async (
       throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
     }
 
-    const { images: pageImages, warnings: imageWarnings } = await extractImages(pdfDocument, [page]);
+    const { images: pageImages, warnings: imageWarnings } = await extractImages(pdfDocument, [
+      page,
+    ]);
     const targetImage = pageImages.find((img) => img.index === index && img.page === page);
 
     if (!targetImage) {

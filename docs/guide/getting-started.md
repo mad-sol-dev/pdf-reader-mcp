@@ -204,6 +204,40 @@ Responds with page dimensions, scale, fingerprint, and a PNG part for the render
 
 Outputs OCR `text`, provider info, whether it came `from_cache`, and page identifiers. Use `pdf_ocr_image` similarly when you already know the image index.
 
+**Smart OCR — intelligent OCR decision**
+
+Use `smart_ocr: true` to automatically skip OCR when text extraction is already sufficient:
+
+```json
+{
+  "source": { "path": "./docs/report.pdf" },
+  "page": 5,
+  "smart_ocr": true,
+  "provider": { "type": "mistral-ocr" }
+}
+```
+
+Decision heuristics:
+- Text too short (< 50 chars) → Run OCR
+- Text too long (> 1000 chars) → Skip OCR
+- High non-ASCII ratio → Run OCR (likely garbage)
+- High image-to-text ratio → Run OCR
+
+Response when skipped:
+
+```json
+{
+  "data": {
+    "text": "Extracted text from PDF...",
+    "provider": "pdf_text",
+    "skipped": true,
+    "reason": "text_too_long"
+  }
+}
+```
+
+**Benefit**: Save API costs by only running OCR when needed (especially useful for large documents).
+
 **Mock OCR provider — fast, no-network placeholder**
 
 Use the built-in mock provider when you want predictable OCR responses without hitting an external API (ideal for local development, CI, and integration tests).

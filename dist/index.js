@@ -14,8 +14,75 @@ var cacheClearArgsSchema = object({
 });
 
 // src/utils/cache.ts
-var textCache = new Map;
-var ocrCache = new Map;
+class LruCache {
+  options;
+  store = new Map;
+  evictions = 0;
+  constructor(options) {
+    this.options = options;
+  }
+  get size() {
+    return this.store.size;
+  }
+  get evictionCount() {
+    return this.evictions;
+  }
+  getKeys() {
+    return Array.from(this.store.keys());
+  }
+  clear() {
+    this.store.clear();
+  }
+  isExpired(entry) {
+    if (!this.options.ttlMs)
+      return false;
+    return Date.now() - entry.createdAt > this.options.ttlMs;
+  }
+  markRecentlyUsed(key, entry) {
+    this.store.delete(key);
+    this.store.set(key, entry);
+  }
+  trimToMaxEntries() {
+    while (this.store.size > this.options.maxEntries) {
+      const oldestKey = this.store.keys().next().value;
+      if (!oldestKey)
+        return;
+      this.store.delete(oldestKey);
+      this.evictions += 1;
+    }
+  }
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry)
+      return;
+    if (this.isExpired(entry)) {
+      this.store.delete(key);
+      this.evictions += 1;
+      return;
+    }
+    this.markRecentlyUsed(key, entry);
+    return entry.value;
+  }
+  set(key, value) {
+    const entry = { value, createdAt: Date.now() };
+    if (this.store.has(key)) {
+      this.store.delete(key);
+    }
+    this.store.set(key, entry);
+    this.trimToMaxEntries();
+  }
+}
+var DEFAULT_CACHE_OPTIONS = {
+  text: { maxEntries: 500 },
+  ocr: { maxEntries: 500 }
+};
+var cacheOptions = {
+  text: { ...DEFAULT_CACHE_OPTIONS.text },
+  ocr: { ...DEFAULT_CACHE_OPTIONS.ocr }
+};
+var buildCache = (scope) => new LruCache(cacheOptions[scope]);
+var textCache = buildCache("text");
+var ocrCache = buildCache("ocr");
 var buildPageKey = (fingerprint, page, options) => {
   const serializedOptions = JSON.stringify({
     includeImageIndexes: options.includeImageIndexes,
@@ -37,28 +104,34 @@ var buildOcrKey = (fingerprint, target) => `${fingerprint}#${target}`;
 var getCachedPageText = (fingerprint, page, options) => {
   if (!fingerprint)
     return;
-  return textCache.get(buildPageKey(fingerprint, page, options))?.value;
+  return textCache.get(buildPageKey(fingerprint, page, options));
 };
 var setCachedPageText = (fingerprint, page, options, value) => {
   if (!fingerprint)
     return;
-  textCache.set(buildPageKey(fingerprint, page, options), { value, createdAt: Date.now() });
+  textCache.set(buildPageKey(fingerprint, page, options), value);
 };
 var getCachedOcrText = (fingerprint, target) => {
   if (!fingerprint)
     return;
-  return ocrCache.get(buildOcrKey(fingerprint, target))?.value;
+  return ocrCache.get(buildOcrKey(fingerprint, target));
 };
 var setCachedOcrText = (fingerprint, target, value) => {
   if (!fingerprint)
     return;
-  ocrCache.set(buildOcrKey(fingerprint, target), { value, createdAt: Date.now() });
+  ocrCache.set(buildOcrKey(fingerprint, target), value);
 };
 var getCacheStats = () => ({
   text_entries: textCache.size,
   ocr_entries: ocrCache.size,
-  text_keys: Array.from(textCache.keys()),
-  ocr_keys: Array.from(ocrCache.keys())
+  text_keys: textCache.getKeys(),
+  ocr_keys: ocrCache.getKeys(),
+  text_evictions: textCache.evictionCount,
+  ocr_evictions: ocrCache.evictionCount,
+  config: {
+    text: { ...cacheOptions.text },
+    ocr: { ...cacheOptions.ocr }
+  }
 });
 var clearCache = (scope) => {
   const clearText = scope === "text" || scope === "all";
@@ -217,12 +290,19 @@ var processImageData = (imageData, pageNum, arrayIndex) => {
     data: pngBase64
   };
 };
+var IMAGE_WARNING_TIMEOUT = "image_extraction_timeout";
+var IMAGE_WARNING_FAILED = "image_extraction_failed";
+var IMAGE_WARNING_PAGE_FAILED = "image_extraction_page_failed";
+var buildImageWarning = (code, pageNum, imageName) => {
+  const base = `${code}:page=${pageNum}`;
+  return imageName ? `${base}:image=${imageName}` : base;
+};
 var retrieveImageData = async (page, imageName, pageNum) => {
   if (imageName.startsWith("g_")) {
     try {
       const imageData = page.commonObjs.get(imageName);
       if (imageData) {
-        return imageData;
+        return { data: imageData };
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -232,7 +312,7 @@ var retrieveImageData = async (page, imageName, pageNum) => {
   try {
     const imageData = page.objs.get(imageName);
     if (imageData !== undefined) {
-      return imageData;
+      return { data: imageData };
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -252,7 +332,10 @@ var retrieveImageData = async (page, imageName, pageNum) => {
         resolved = true;
         cleanup();
         logger2.warn("Image extraction timeout", { imageName, pageNum });
-        resolve(null);
+        resolve({
+          data: null,
+          warning: buildImageWarning(IMAGE_WARNING_TIMEOUT, pageNum, imageName)
+        });
       }
     }, 1e4);
     try {
@@ -260,7 +343,7 @@ var retrieveImageData = async (page, imageName, pageNum) => {
         if (!resolved) {
           resolved = true;
           cleanup();
-          resolve(imageData);
+          resolve({ data: imageData });
         }
       });
     } catch (error) {
@@ -269,7 +352,10 @@ var retrieveImageData = async (page, imageName, pageNum) => {
         cleanup();
         const message = error instanceof Error ? error.message : String(error);
         logger2.warn("Error in async image get", { imageName, error: message });
-        resolve(null);
+        resolve({
+          data: null,
+          warning: buildImageWarning(IMAGE_WARNING_FAILED, pageNum, imageName)
+        });
       }
     }
   });
@@ -307,6 +393,7 @@ var extractMetadataAndPageCount = async (pdfDocument, includeMetadata, includePa
 };
 var extractImagesFromPage = async (page, pageNum) => {
   const images = [];
+  const warnings = [];
   try {
     const operatorList = await page.getOperatorList();
     const imageIndices = [];
@@ -322,30 +409,37 @@ var extractImagesFromPage = async (page, pageNum) => {
         return null;
       }
       const imageName = argsArray[0];
-      const imageData = await retrieveImageData(page, imageName, pageNum);
-      return processImageData(imageData, pageNum, arrayIndex);
+      const imageResult = await retrieveImageData(page, imageName, pageNum);
+      if (imageResult.warning) {
+        warnings.push(imageResult.warning);
+      }
+      return processImageData(imageResult.data, pageNum, arrayIndex);
     });
     const resolvedImages = await Promise.all(imagePromises);
     images.push(...resolvedImages.filter((img) => img !== null));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger2.warn("Error extracting images from page", { pageNum, error: message });
+    warnings.push(buildImageWarning(IMAGE_WARNING_PAGE_FAILED, pageNum));
   }
-  return images;
+  return { images, warnings };
 };
 var extractImages = async (pdfDocument, pagesToProcess) => {
   const allImages = [];
+  const warnings = [];
   for (const pageNum of pagesToProcess) {
     try {
       const page = await pdfDocument.getPage(pageNum);
-      const pageImages = await extractImagesFromPage(page, pageNum);
-      allImages.push(...pageImages);
+      const { images, warnings: pageWarnings } = await extractImagesFromPage(page, pageNum);
+      allImages.push(...images);
+      warnings.push(...pageWarnings);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger2.warn("Error getting page for image extraction", { pageNum, error: message });
+      warnings.push(buildImageWarning(IMAGE_WARNING_PAGE_FAILED, pageNum));
     }
   }
-  return allImages;
+  return { images: allImages, warnings };
 };
 var buildWarnings = (invalidPages, totalPages) => {
   if (invalidPages.length === 0) {
@@ -357,6 +451,7 @@ var buildWarnings = (invalidPages, totalPages) => {
 };
 var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescription) => {
   const contentItems = [];
+  const warnings = [];
   try {
     const page = await pdfDocument.getPage(pageNum);
     const textContent = await page.getTextContent();
@@ -369,20 +464,24 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
         continue;
       const y = Math.round(yCoord);
       const x = Math.round(xCoord);
+      const fontSize = typeof textItem.height === "number" && Number.isFinite(textItem.height) ? Math.abs(textItem.height) : undefined;
       if (!textByY.has(y)) {
         textByY.set(y, []);
       }
-      textByY.get(y)?.push({ x, text: textItem.str });
+      textByY.get(y)?.push({ x, text: textItem.str, fontSize });
     }
     for (const [y, textParts] of textByY.entries()) {
       textParts.sort((a, b) => a.x - b.x);
       const textContent2 = textParts.map((part) => part.text).join("");
+      const fontSizes = textParts.map((part) => part.fontSize).filter((value) => typeof value === "number" && value > 0);
+      const averageFontSize = fontSizes.length > 0 ? fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length : undefined;
       const xPosition = textParts[0]?.x ?? 0;
       if (textContent2.trim()) {
         contentItems.push({
           type: "text",
           yPosition: y,
           xPosition,
+          fontSize: averageFontSize,
           textContent: textContent2
         });
       }
@@ -410,8 +509,11 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
             yPosition = Math.round(yCoord);
           }
         }
-        const imageData = await retrieveImageData(page, imageName, pageNum);
-        const extractedImage = processImageData(imageData, pageNum, arrayIndex);
+        const imageResult = await retrieveImageData(page, imageName, pageNum);
+        if (imageResult.warning) {
+          warnings.push(imageResult.warning);
+        }
+        const extractedImage = processImageData(imageResult.data, pageNum, arrayIndex);
         if (extractedImage) {
           return {
             type: "image",
@@ -432,15 +534,19 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
       sourceDescription,
       error: message
     });
-    return [
-      {
-        type: "text",
-        yPosition: 0,
-        textContent: `Error processing page: ${message}`
-      }
-    ];
+    warnings.push(buildImageWarning(IMAGE_WARNING_PAGE_FAILED, pageNum));
+    return {
+      items: [
+        {
+          type: "text",
+          yPosition: 0,
+          textContent: `Error processing page: ${message}`
+        }
+      ],
+      warnings
+    };
   }
-  return contentItems.sort((a, b) => b.yPosition - a.yPosition);
+  return { items: contentItems.sort((a, b) => b.yPosition - a.yPosition), warnings };
 };
 
 // src/utils/errors.ts
@@ -588,12 +694,47 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 // src/utils/pathUtils.ts
 import path from "node:path";
 var PROJECT_ROOT = process.cwd();
-var resolvePath = (userPath) => {
+var ENV_ALLOWED_PATHS = "PDF_ALLOWED_PATHS";
+var ENV_BASE_DIR = "PDF_BASE_DIR";
+var ENV_ALLOW_UNSAFE_ABSOLUTE = "PDF_ALLOW_UNSAFE_ABSOLUTE";
+var parseAllowedRoots = (value) => {
+  if (!value) {
+    return;
+  }
+  return value.split(path.delimiter).map((entry) => entry.trim()).filter(Boolean);
+};
+var getPathGuardConfig = () => {
+  const allowedRoots = parseAllowedRoots(process.env[ENV_ALLOWED_PATHS]);
+  return {
+    baseDir: process.env[ENV_BASE_DIR] ?? PROJECT_ROOT,
+    ...allowedRoots !== undefined && { allowedRoots },
+    allowUnsafeAbsolute: process.env[ENV_ALLOW_UNSAFE_ABSOLUTE] === "true"
+  };
+};
+var isWithinRoot = (root, target) => {
+  const normalizedRoot = path.resolve(root);
+  const normalizedTarget = path.resolve(target);
+  const relative = path.relative(normalizedRoot, normalizedTarget);
+  return relative === "" || !relative.startsWith("..") && !path.isAbsolute(relative);
+};
+var resolvePath = (userPath, options = {}) => {
   if (typeof userPath !== "string") {
     throw new PdfError(-32602 /* InvalidParams */, "Path must be a string.");
   }
+  const envConfig = getPathGuardConfig();
+  const baseDir = options.baseDir ?? envConfig.baseDir ?? PROJECT_ROOT;
+  const allowedRoots = options.allowedRoots ?? envConfig.allowedRoots ?? [baseDir];
+  const allowUnsafeAbsolute = options.allowUnsafeAbsolute ?? envConfig.allowUnsafeAbsolute ?? false;
   const normalizedUserPath = path.normalize(userPath);
-  return path.isAbsolute(normalizedUserPath) ? normalizedUserPath : path.resolve(PROJECT_ROOT, normalizedUserPath);
+  const resolvedPath = path.isAbsolute(normalizedUserPath) ? normalizedUserPath : path.resolve(baseDir, normalizedUserPath);
+  if (path.isAbsolute(normalizedUserPath) && allowUnsafeAbsolute) {
+    return path.normalize(resolvedPath);
+  }
+  const isAllowed = allowedRoots.some((root) => isWithinRoot(root, resolvedPath));
+  if (!isAllowed) {
+    throw new PdfError(-32600 /* InvalidRequest */, `Resolved path is outside the allowed directories.`);
+  }
+  return path.normalize(resolvedPath);
 };
 
 // src/pdf/loader.ts
@@ -601,7 +742,119 @@ var logger4 = createLogger("Loader");
 var require2 = createRequire(import.meta.url);
 var CMAP_URL = require2.resolve("pdfjs-dist/package.json").replace("package.json", "cmaps/");
 var MAX_PDF_SIZE = 100 * 1024 * 1024;
-var loadPdfDocument = async (source, sourceDescription) => {
+var DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+var DEFAULT_READ_TIMEOUT_MS = 15000;
+var fetchPdfBytes = async (url, sourceDescription, options) => {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch (err) {
+    throw new PdfError(-32602 /* InvalidParams */, `Invalid URL for ${sourceDescription}. Reason: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const allowedProtocols = options.allowedProtocols ?? [];
+  if (allowedProtocols.length > 0 && !allowedProtocols.includes(parsedUrl.protocol)) {
+    throw new PdfError(-32600 /* InvalidRequest */, `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}.`);
+  }
+  const maxBytes = options.maxBytes ?? MAX_PDF_SIZE;
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const readTimeoutMs = options.readTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
+  const controller = new AbortController;
+  let requestTimedOut = false;
+  const requestTimeoutId = setTimeout(() => {
+    requestTimedOut = true;
+    controller.abort();
+  }, requestTimeoutMs);
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    clearTimeout(requestTimeoutId);
+    if (requestTimedOut) {
+      throw new PdfError(-32600 /* InvalidRequest */, `Timed out requesting PDF from ${sourceDescription} after ${requestTimeoutMs}ms.`);
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw new PdfError(-32600 /* InvalidRequest */, `Failed to fetch PDF from ${sourceDescription}. Reason: ${message}`);
+  }
+  clearTimeout(requestTimeoutId);
+  if (!response.ok) {
+    throw new PdfError(-32600 /* InvalidRequest */, `Failed to fetch PDF from ${sourceDescription}. Status: ${response.status} ${response.statusText}`.trim());
+  }
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const contentLengthBytes = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(contentLengthBytes) && contentLengthBytes > maxBytes) {
+      controller.abort();
+      throw new PdfError(-32600 /* InvalidRequest */, `PDF download exceeds maximum size of ${maxBytes} bytes. Reported content length: ${contentLengthBytes} bytes.`);
+    }
+  }
+  if (!response.body) {
+    throw new PdfError(-32600 /* InvalidRequest */, `Failed to fetch PDF from ${sourceDescription}. Reason: Response body is empty.`);
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let receivedBytes = 0;
+  let readTimedOut = false;
+  let readTimeoutId = null;
+  const resetReadTimeout = () => {
+    if (readTimeoutId) {
+      clearTimeout(readTimeoutId);
+    }
+    readTimeoutId = setTimeout(() => {
+      readTimedOut = true;
+      reader.cancel("read timeout");
+      controller.abort();
+    }, readTimeoutMs);
+  };
+  try {
+    resetReadTimeout();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value) {
+        receivedBytes += value.length;
+        if (receivedBytes > maxBytes) {
+          await reader.cancel("max size exceeded");
+          controller.abort();
+          throw new PdfError(-32600 /* InvalidRequest */, `PDF download exceeds maximum size of ${maxBytes} bytes. Received ${receivedBytes} bytes.`);
+        }
+        chunks.push(value);
+        resetReadTimeout();
+      }
+    }
+    if (readTimedOut) {
+      throw new PdfError(-32600 /* InvalidRequest */, `Timed out reading PDF from ${sourceDescription} after ${readTimeoutMs}ms without new data.`);
+    }
+  } catch (err) {
+    if (readTimeoutId) {
+      clearTimeout(readTimeoutId);
+    }
+    if (readTimedOut) {
+      throw new PdfError(-32600 /* InvalidRequest */, `Timed out reading PDF from ${sourceDescription} after ${readTimeoutMs}ms without new data.`);
+    }
+    if (err instanceof PdfError) {
+      throw err;
+    }
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new PdfError(-32600 /* InvalidRequest */, `Failed to fetch PDF from ${sourceDescription}. Reason: download aborted.`);
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw new PdfError(-32600 /* InvalidRequest */, `Failed to fetch PDF from ${sourceDescription}. Reason: ${message}`);
+  } finally {
+    if (readTimeoutId) {
+      clearTimeout(readTimeoutId);
+    }
+  }
+  const buffer = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return buffer;
+};
+var loadPdfDocument = async (source, sourceDescription, options = {}) => {
   let pdfDataSource;
   try {
     if (source.path) {
@@ -612,7 +865,7 @@ var loadPdfDocument = async (source, sourceDescription) => {
       }
       pdfDataSource = new Uint8Array(buffer);
     } else if (source.url) {
-      pdfDataSource = { url: source.url };
+      pdfDataSource = await fetchPdfBytes(source.url, sourceDescription, options);
     } else {
       throw new PdfError(-32602 /* InvalidParams */, `Source ${sourceDescription} missing 'path' or 'url'.`);
     }
@@ -629,9 +882,8 @@ var loadPdfDocument = async (source, sourceDescription) => {
     }
     throw new PdfError(errorCode, `Failed to prepare PDF source ${sourceDescription}. Reason: ${message}`, { cause: err instanceof Error ? err : undefined });
   }
-  const documentParams = pdfDataSource instanceof Uint8Array ? { data: pdfDataSource } : pdfDataSource;
   const loadingTask = getDocument({
-    ...documentParams,
+    data: pdfDataSource,
     cMapUrl: CMAP_URL,
     cMapPacked: true
   });
@@ -695,12 +947,18 @@ var fetchImage = async (source, sourceDescription, page, index) => {
     if (!pagesToProcess.includes(page)) {
       throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
     }
-    const pageImages = await extractImages(pdfDocument, [page]);
+    const { images: pageImages, warnings: imageWarnings } = await extractImages(pdfDocument, [
+      page
+    ]);
     const targetImage = pageImages.find((img) => img.index === index && img.page === page);
     if (!targetImage) {
       throw new Error(`Image with index ${index} not found on page ${page}.`);
     }
-    const warnings = [...rangeWarnings ?? [], ...buildWarnings(invalidPages, totalPages)];
+    const warnings = [
+      ...rangeWarnings ?? [],
+      ...buildWarnings(invalidPages, totalPages),
+      ...imageWarnings
+    ];
     return { metadata: buildImageMetadata(targetImage, warnings), imageData: targetImage.data };
   });
 };
@@ -844,14 +1102,14 @@ var getPageStatsArgsSchema = object5({
 // src/handlers/getPageStats.ts
 var logger8 = createLogger("GetPageStats");
 var summarizePageStats = (pagesToProcess, pageContents, includeImages) => {
-  return pageContents.map((items, idx) => {
-    const textLength = items.reduce((total, item) => {
+  return pageContents.map((result, idx) => {
+    const textLength = result.items.reduce((total, item) => {
       if (item.type === "text" && item.textContent) {
         return total + item.textContent.length;
       }
       return total;
     }, 0);
-    const imageCount = includeImages ? items.filter((item) => item.type === "image" && item.imageData !== undefined).length : 0;
+    const imageCount = includeImages ? result.items.filter((item) => item.type === "image" && item.imageData !== undefined).length : 0;
     return {
       page: pagesToProcess[idx],
       text_length: textLength,
@@ -1047,11 +1305,12 @@ var collectImages = async (source, sourceDescription, allowFullDocument) => {
       allowFullDocument,
       samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT
     });
-    const images = await extractImages(pdfDocument, pagesToProcess);
+    const { images, warnings: imageWarnings } = await extractImages(pdfDocument, pagesToProcess);
     const warnings = [
       ...rangeWarnings ?? [],
       ...buildWarnings(invalidPages, totalPages),
-      ...guardWarning ? [guardWarning] : []
+      ...guardWarning ? [guardWarning] : [],
+      ...imageWarnings
     ];
     const imageInfo = images.map((img) => ({
       page: img.page,
@@ -1122,11 +1381,12 @@ import {
 } from "@sylphx/vex";
 var ocrProviderSchema = object8({
   name: optional6(str3(description7("Friendly provider identifier for logs."))),
-  type: optional6(str3(description7("Provider type: http or mock."))),
+  type: optional6(str3(description7("Provider type: http, mistral, mistral-ocr, or mock."))),
   endpoint: optional6(str3(description7("OCR HTTP endpoint."))),
   api_key: optional6(str3(description7("Bearer token for the OCR provider."))),
   model: optional6(str3(description7("Model name or identifier."))),
   language: optional6(str3(description7("Preferred language for OCR."))),
+  timeout_ms: optional6(num3(gte3(1), description7("Timeout in milliseconds for OCR requests."))),
   extras: optional6(record(str3(), str3(), description7("Additional provider-specific options.")))
 });
 var ocrPageArgsSchema = object8({
@@ -1134,7 +1394,8 @@ var ocrPageArgsSchema = object8({
   page: num3(gte3(1), description7("1-based page number to OCR.")),
   scale: optional6(num3(gte3(0.1), description7("Rendering scale applied before OCR."))),
   provider: optional6(ocrProviderSchema),
-  cache: optional6(bool4(description7("Use cached OCR result when available.")))
+  cache: optional6(bool4(description7("Use cached OCR result when available."))),
+  smart_ocr: optional6(bool4(description7("Enable smart OCR decision step to skip OCR when likely unnecessary.")))
 });
 var ocrImageArgsSchema = object8({
   source: pdfSourceSchema,
@@ -1148,6 +1409,8 @@ var ocrImageArgsSchema = object8({
 import fs2 from "node:fs";
 import path2 from "node:path";
 var logger11 = createLogger("DiskCache");
+var LOCK_RETRY_MS = 25;
+var LOCK_TIMEOUT_MS = 5000;
 var getCacheFilePath = (pdfPath) => {
   const dir = path2.dirname(pdfPath);
   const basename = path2.basename(pdfPath, path2.extname(pdfPath));
@@ -1177,24 +1440,81 @@ var loadOcrCache = (pdfPath) => {
     return null;
   }
 };
+var sleepSync = (ms) => {
+  const array6 = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(array6, 0, 0, ms);
+};
+var acquireCacheLock = (lockPath) => {
+  const start = Date.now();
+  while (true) {
+    try {
+      return fs2.openSync(lockPath, "wx");
+    } catch (error) {
+      const err = error;
+      if (err.code === "EEXIST") {
+        if (Date.now() - start > LOCK_TIMEOUT_MS) {
+          throw new Error(`Timed out waiting for cache lock at ${lockPath}`);
+        }
+        sleepSync(LOCK_RETRY_MS);
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+var releaseCacheLock = (lockPath, fd) => {
+  fs2.closeSync(fd);
+  fs2.rmSync(lockPath, { force: true });
+};
+var writeCacheFile = (cachePath, cache) => {
+  cache.updated_at = new Date().toISOString();
+  const dir = path2.dirname(cachePath);
+  if (!fs2.existsSync(dir)) {
+    fs2.mkdirSync(dir, { recursive: true });
+  }
+  const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+  fs2.writeFileSync(tempPath, JSON.stringify(cache, null, 2), "utf-8");
+  fs2.renameSync(tempPath, cachePath);
+};
+var mergeCaches = (existing, incoming) => {
+  const now = new Date().toISOString();
+  if (existing && existing.fingerprint === incoming.fingerprint) {
+    return {
+      ...existing,
+      ...incoming,
+      created_at: existing.created_at,
+      updated_at: now,
+      pages: { ...existing.pages, ...incoming.pages },
+      images: { ...existing.images, ...incoming.images }
+    };
+  }
+  return {
+    ...incoming,
+    created_at: incoming.created_at ?? existing?.created_at ?? now,
+    updated_at: now,
+    pages: incoming.pages ?? {},
+    images: incoming.images ?? {}
+  };
+};
 var saveOcrCache = (pdfPath, cache) => {
   const cachePath = getCacheFilePath(pdfPath);
+  const lockPath = `${cachePath}.lock`;
+  const lockFd = acquireCacheLock(lockPath);
   try {
-    cache.updated_at = new Date().toISOString();
-    const dir = path2.dirname(cachePath);
-    if (!fs2.existsSync(dir)) {
-      fs2.mkdirSync(dir, { recursive: true });
-    }
-    fs2.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf-8");
+    const latest = loadOcrCache(pdfPath);
+    const merged = mergeCaches(latest, cache);
+    writeCacheFile(cachePath, merged);
     logger11.debug("Saved OCR cache to disk", {
       cachePath,
-      pageCount: Object.keys(cache.pages).length,
-      imageCount: Object.keys(cache.images).length
+      pageCount: Object.keys(merged.pages).length,
+      imageCount: Object.keys(merged.images).length
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger11.error("Failed to save OCR cache", { cachePath, error: message });
     throw new Error(`Failed to save OCR cache: ${message}`);
+  } finally {
+    releaseCacheLock(lockPath, lockFd);
   }
 };
 var getCachedOcrPage = (pdfPath, fingerprint, page, providerHash) => {
@@ -1327,6 +1647,31 @@ var getDocumentFingerprint = (pdfDocument, sourceDescription) => {
 };
 
 // src/utils/ocr.ts
+import { Mistral } from "@mistralai/mistralai";
+var DEFAULT_OCR_TIMEOUT_MS = 15000;
+var DEFAULT_MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
+var resolveTimeoutMs = (provider) => provider?.timeout_ms && provider.timeout_ms > 0 ? provider.timeout_ms : DEFAULT_OCR_TIMEOUT_MS;
+var fetchWithTimeout = async (url, init, timeoutMs) => {
+  const controller = new AbortController;
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(`OCR request timed out after ${timeoutMs}ms.`);
+    }
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`OCR request timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 var handleMockOcr = (provider) => ({
   provider: provider?.name ?? "mock",
   text: "OCR provider not configured. Supply provider options to enable OCR."
@@ -1341,7 +1686,7 @@ var handleHttpOcr = async (base64Image, provider) => {
   if (provider.api_key) {
     headers["Authorization"] = `Bearer ${provider.api_key}`;
   }
-  const response = await fetch(provider.endpoint, {
+  const response = await fetchWithTimeout(provider.endpoint, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -1350,7 +1695,7 @@ var handleHttpOcr = async (base64Image, provider) => {
       language: provider.language,
       extras: provider.extras
     })
-  });
+  }, resolveTimeoutMs(provider));
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`OCR provider request failed with status ${response.status}: ${errorText || response.statusText}`);
@@ -1365,6 +1710,94 @@ var handleHttpOcr = async (base64Image, provider) => {
     text: text7
   };
 };
+var handleMistralOcr = async (base64Image, provider) => {
+  const apiKey = provider.api_key ?? process.env["MISTRAL_API_KEY"];
+  if (!apiKey) {
+    throw new Error("Mistral OCR provider requires MISTRAL_API_KEY.");
+  }
+  const endpoint = provider.endpoint ?? DEFAULT_MISTRAL_ENDPOINT;
+  const imageUrl = base64Image.startsWith("data:") ? base64Image : `data:image/png;base64,${base64Image}`;
+  const prompt = (provider.extras && typeof provider.extras["prompt"] === "string" ? provider.extras["prompt"] : undefined) ?? "Extract and transcribe all text from this image. Preserve layout and return markdown.";
+  const temperature = provider.extras && typeof provider.extras["temperature"] === "string" ? Number.parseFloat(provider.extras["temperature"]) : undefined;
+  const maxTokens = provider.extras && typeof provider.extras["max_tokens"] === "string" ? Number.parseInt(provider.extras["max_tokens"], 10) : undefined;
+  const response = await fetchWithTimeout(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: provider.model ?? "mistral-large-2512",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: imageUrl }
+          ]
+        }
+      ],
+      temperature: Number.isFinite(temperature) ? temperature : 0,
+      max_tokens: Number.isFinite(maxTokens) ? maxTokens : 4000
+    })
+  }, resolveTimeoutMs(provider));
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Mistral OCR request failed with status ${response.status}: ${errorText || response.statusText}`);
+  }
+  const data = await response.json();
+  const content = data.text ?? data.choices?.[0]?.message?.content;
+  let text7;
+  if (typeof content === "string") {
+    text7 = content;
+  } else if (Array.isArray(content)) {
+    text7 = content.map((chunk) => chunk.text).filter(Boolean).join("");
+  }
+  if (!text7) {
+    throw new Error("Mistral OCR response missing text field.");
+  }
+  return {
+    provider: provider.name ?? "mistral",
+    text: text7
+  };
+};
+var handleMistralOcrDedicated = async (base64Image, provider) => {
+  const apiKey = provider.api_key ?? process.env["MISTRAL_API_KEY"];
+  if (!apiKey) {
+    throw new Error("Mistral OCR provider requires MISTRAL_API_KEY.");
+  }
+  const client = new Mistral({ apiKey });
+  const payload = base64Image.startsWith("data:") ? base64Image.split(",")[1] ?? "" : base64Image;
+  const buffer = Buffer.from(payload, "base64");
+  const tableFormat = provider.extras && typeof provider.extras["tableFormat"] === "string" ? provider.extras["tableFormat"] : "markdown";
+  let uploadedId;
+  try {
+    const uploaded = await client.files.upload({
+      file: { fileName: "page.png", content: buffer },
+      purpose: "ocr"
+    });
+    uploadedId = uploaded.id;
+    const result = await client.ocr.process({
+      model: provider.model ?? "mistral-ocr-latest",
+      document: { fileId: uploadedId },
+      tableFormat
+    });
+    const text7 = result.pages?.[0]?.markdown;
+    if (!text7) {
+      throw new Error("Mistral OCR response missing text field.");
+    }
+    return {
+      provider: provider.name ?? "mistral-ocr",
+      text: text7
+    };
+  } finally {
+    if (uploadedId) {
+      try {
+        await client.files.delete({ fileId: uploadedId });
+      } catch {}
+    }
+  }
+};
 var sanitizeProviderOptions = (provider) => {
   if (!provider) {
     return;
@@ -1372,8 +1805,9 @@ var sanitizeProviderOptions = (provider) => {
   const sanitized = {};
   if (typeof provider.name === "string")
     sanitized.name = provider.name;
-  if (provider.type === "http" || provider.type === "mock")
+  if (provider.type === "http" || provider.type === "mock" || provider.type === "mistral" || provider.type === "mistral-ocr") {
     sanitized.type = provider.type;
+  }
   if (typeof provider.endpoint === "string")
     sanitized.endpoint = provider.endpoint;
   if (typeof provider.api_key === "string")
@@ -1382,6 +1816,8 @@ var sanitizeProviderOptions = (provider) => {
     sanitized.model = provider.model;
   if (typeof provider.language === "string")
     sanitized.language = provider.language;
+  if (typeof provider.timeout_ms === "number")
+    sanitized.timeout_ms = provider.timeout_ms;
   if (provider.extras)
     sanitized.extras = provider.extras;
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;
@@ -1392,6 +1828,12 @@ var performOcr = async (base64Image, provider) => {
   }
   if (provider.type === "http") {
     return handleHttpOcr(base64Image, provider);
+  }
+  if (provider.type === "mistral") {
+    return handleMistralOcr(base64Image, provider);
+  }
+  if (provider.type === "mistral-ocr") {
+    return handleMistralOcrDedicated(base64Image, provider);
   }
   throw new Error("Unsupported OCR provider configuration.");
 };
@@ -1433,7 +1875,7 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
         return buildCachedResult(sourceDescription, fingerprint, page, index, provider?.name, diskCached.text);
       }
     }
-    const images = await extractImages(pdfDocument, [page]);
+    const { images } = await extractImages(pdfDocument, [page]);
     const target = images.find((img) => img.page === page && img.index === index);
     if (!target) {
       throw new Error(`Image with index ${index} not found on page ${page}.`);
@@ -1495,6 +1937,7 @@ var pdfOcrImage = tool7().description("Perform OCR on a specific image from a PD
 
 // src/handlers/ocrPage.ts
 import { text as text8, tool as tool8, toolError as toolError8 } from "@sylphx/mcp-server-sdk";
+import { OPS as OPS2 } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 // src/pdf/render.ts
 import { createCanvas } from "canvas";
@@ -1546,6 +1989,67 @@ var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
 
 // src/handlers/ocrPage.ts
 var logger14 = createLogger("OcrPage");
+var SMART_OCR_MIN_TEXT_LENGTH = 50;
+var SMART_OCR_MAX_TEXT_LENGTH = 1000;
+var SMART_OCR_NON_ASCII_RATIO = 0.3;
+var SMART_OCR_NON_ASCII_MIN_COUNT = 10;
+var SMART_OCR_IMAGE_TEXT_RATIO = 0.02;
+var DECISION_CACHE_MAX_ENTRIES = 500;
+var decisionCache = new Map;
+var buildDecisionCacheKey = (fingerprint, page) => `${fingerprint}#ocr-decision#page-${page}`;
+var getCachedDecision = (fingerprint, page) => decisionCache.get(buildDecisionCacheKey(fingerprint, page));
+var setCachedDecision = (fingerprint, page, decision) => {
+  const key = buildDecisionCacheKey(fingerprint, page);
+  if (decisionCache.has(key)) {
+    decisionCache.delete(key);
+  }
+  decisionCache.set(key, decision);
+  if (decisionCache.size > DECISION_CACHE_MAX_ENTRIES) {
+    const oldestKey = decisionCache.keys().next().value;
+    if (oldestKey) {
+      decisionCache.delete(oldestKey);
+    }
+  }
+};
+var extractTextFromPage = async (page) => {
+  const textContent = await page.getTextContent();
+  const items = textContent.items;
+  return items.map((item) => item.str ?? "").join("");
+};
+var countImagesOnPage = async (page) => {
+  const operatorList = await page.getOperatorList();
+  const fnArray = operatorList.fnArray ?? [];
+  let imageCount = 0;
+  for (const op of fnArray) {
+    if (op === OPS2.paintImageXObject || op === OPS2.paintXObject) {
+      imageCount += 1;
+    }
+  }
+  return imageCount;
+};
+var decideNeedsOcr = async (page, extractedText) => {
+  const trimmedText = extractedText.trim();
+  const textLength = trimmedText.length;
+  if (textLength < SMART_OCR_MIN_TEXT_LENGTH) {
+    return { needsOcr: true, reason: "text_too_short" };
+  }
+  if (textLength > SMART_OCR_MAX_TEXT_LENGTH) {
+    return { needsOcr: false, reason: "text_too_long" };
+  }
+  const nonWhitespaceText = trimmedText.replace(/\s+/g, "");
+  const nonAsciiMatches = nonWhitespaceText.match(/[^\x00-\x7f]/g) ?? [];
+  const nonAsciiCount = nonAsciiMatches.length;
+  const nonAsciiRatio = nonAsciiCount / Math.max(1, nonWhitespaceText.length);
+  if (nonAsciiCount >= SMART_OCR_NON_ASCII_MIN_COUNT && nonAsciiRatio >= SMART_OCR_NON_ASCII_RATIO) {
+    return { needsOcr: true, reason: "non_ascii_ratio_high" };
+  }
+  const imageCount = await countImagesOnPage(page);
+  const imageToTextRatio = imageCount / Math.max(1, textLength);
+  if (imageToTextRatio >= SMART_OCR_IMAGE_TEXT_RATIO) {
+    return { needsOcr: true, reason: "image_text_ratio_high" };
+  }
+  return { needsOcr: false, reason: "text_within_thresholds" };
+};
 var buildCachedResult2 = (sourceDescription, fingerprint, page, provider, text9) => ({
   source: sourceDescription,
   success: true,
@@ -1557,7 +2061,7 @@ var buildCachedResult2 = (sourceDescription, fingerprint, page, provider, text9)
     page
   }
 });
-var performPageOcr = async (source, sourceDescription, page, scale, provider, useCache) => {
+var performPageOcr = async (source, sourceDescription, page, scale, provider, useCache, smartOcr) => {
   return withPdfDocument(source, sourceDescription, async (pdfDocument) => {
     const totalPages = pdfDocument.numPages;
     if (page < 1 || page > totalPages) {
@@ -1582,7 +2086,42 @@ var performPageOcr = async (source, sourceDescription, page, scale, provider, us
         return buildCachedResult2(sourceDescription, fingerprint, page, provider?.name, diskCached.text);
       }
     }
-    const rendered = await renderPageToPng(pdfDocument, page, renderScale);
+    let rendered;
+    let extractedText = "";
+    if (smartOcr) {
+      rendered = await renderPageToPng(pdfDocument, page, renderScale);
+      const pageInstance = await pdfDocument.getPage(page);
+      extractedText = await extractTextFromPage(pageInstance);
+      const cachedDecision = getCachedDecision(fingerprint, page);
+      const decision = cachedDecision ?? await decideNeedsOcr(pageInstance, extractedText);
+      if (!cachedDecision) {
+        setCachedDecision(fingerprint, page, decision);
+      }
+      logger14.info("Smart OCR decision", {
+        page,
+        needs_ocr: decision.needsOcr,
+        reason: decision.reason,
+        text_length: extractedText.length
+      });
+      if (!decision.needsOcr) {
+        return {
+          source: sourceDescription,
+          success: true,
+          data: {
+            text: extractedText,
+            provider: "pdf_text",
+            fingerprint,
+            from_cache: false,
+            page,
+            skipped: true,
+            reason: decision.reason
+          }
+        };
+      }
+    }
+    if (!rendered) {
+      rendered = await renderPageToPng(pdfDocument, page, renderScale);
+    }
     const ocr = await performOcr(rendered.data, provider);
     setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
     if (source.path) {
@@ -1608,14 +2147,14 @@ var performPageOcr = async (source, sourceDescription, page, scale, provider, us
   });
 };
 var executeOcrPage = async (input) => {
-  const { source, page, scale, provider, cache } = input;
+  const { source, page, scale, provider, cache, smartOcr } = input;
   const sourceDescription = source.path ?? source.url ?? "unknown source";
   const providerOptions = sanitizeProviderOptions(provider);
   try {
     const result = await performPageOcr({
       ...source.path ? { path: source.path } : {},
       ...source.url ? { url: source.url } : {}
-    }, sourceDescription, page, scale, providerOptions, cache !== false);
+    }, sourceDescription, page, scale, providerOptions, cache !== false, smartOcr === true);
     return [text8(JSON.stringify(result, null, 2))];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1624,7 +2163,7 @@ var executeOcrPage = async (input) => {
   }
 };
 var pdfOcrPage = tool8().description("Perform OCR on a rendered PDF page with optional provider configuration and caching.").input(ocrPageArgsSchema).handler(async ({ input }) => {
-  const { source, provider, cache, page, scale } = input;
+  const { source, provider, cache, page, scale, smart_ocr: smartOcr } = input;
   const sourceArgs = {
     ...source.path ? { path: source.path } : {},
     ...source.url ? { url: source.url } : {}
@@ -1634,6 +2173,7 @@ var pdfOcrPage = tool8().description("Perform OCR on a rendered PDF page with op
     page,
     ...scale !== undefined ? { scale } : {},
     ...cache !== undefined ? { cache } : {},
+    ...smartOcr !== undefined ? { smartOcr } : {},
     ...sanitizedProvider ? { provider: sanitizedProvider } : {},
     source: sourceArgs
   });
@@ -1669,17 +2209,24 @@ var detectTables = (items) => {
   return tables;
 };
 var analyzeTableCandidate = (items, startIndex) => {
-  const COLUMN_TOLERANCE = 20;
   const MIN_COLUMNS = 3;
   const MIN_ROWS = 3;
   const MAX_ITEMS_TO_CHECK = 50;
+  const MIN_TOLERANCE = 10;
+  const MAX_TOLERANCE = 50;
   const checkRange = Math.min(items.length - startIndex, MAX_ITEMS_TO_CHECK);
   if (checkRange < MIN_COLUMNS * MIN_ROWS) {
     return null;
   }
+  const itemsInRange = items.slice(startIndex, startIndex + checkRange);
+  const avgFontSize = calculateAverageFontSize(itemsInRange);
+  const estimatedPageWidth = estimatePageWidth(itemsInRange);
+  const fontBasedTolerance = avgFontSize * 0.5;
+  const pageWidthTolerance = estimatedPageWidth ? estimatedPageWidth * 0.05 : 0;
+  const COLUMN_TOLERANCE = clamp(Math.max(fontBasedTolerance, pageWidthTolerance), MIN_TOLERANCE, MAX_TOLERANCE);
   const xPositions = [];
-  for (let i = startIndex;i < startIndex + checkRange; i++) {
-    const x = items[i]?.xPosition;
+  for (const item of itemsInRange) {
+    const x = item.xPosition;
     if (x !== undefined) {
       xPositions.push(x);
     }
@@ -1688,7 +2235,6 @@ var analyzeTableCandidate = (items, startIndex) => {
   if (columnPositions.length < MIN_COLUMNS) {
     return null;
   }
-  const itemsInRange = items.slice(startIndex, startIndex + checkRange);
   const rowsByY = new Map;
   for (const item of itemsInRange) {
     if (item.xPosition === undefined)
@@ -1718,6 +2264,61 @@ var analyzeTableCandidate = (items, startIndex) => {
     rows: validRows.length
   };
 };
+var calculateAverageFontSize = (items) => {
+  const fontSizes = items.map((item) => item.fontSize).filter((value) => typeof value === "number" && value > 0);
+  if (fontSizes.length > 0) {
+    return fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length;
+  }
+  const averageCharWidth = estimateAverageCharacterWidth(items);
+  if (averageCharWidth > 0) {
+    return averageCharWidth / 0.5;
+  }
+  return 12;
+};
+var estimateAverageCharacterWidth = (items) => {
+  const rows = new Map;
+  for (const item of items) {
+    if (item.type !== "text" || item.xPosition === undefined || !item.textContent) {
+      continue;
+    }
+    if (!rows.has(item.yPosition)) {
+      rows.set(item.yPosition, []);
+    }
+    rows.get(item.yPosition)?.push(item);
+  }
+  const widthSamples = [];
+  for (const rowItems of rows.values()) {
+    rowItems.sort((a, b) => (a.xPosition ?? 0) - (b.xPosition ?? 0));
+    for (let i = 0;i < rowItems.length - 1; i++) {
+      const current = rowItems[i];
+      const next = rowItems[i + 1];
+      if (!current || !next || current.xPosition === undefined || next.xPosition === undefined) {
+        continue;
+      }
+      const textLength = current.textContent?.length ?? 0;
+      if (textLength === 0)
+        continue;
+      const deltaX = next.xPosition - current.xPosition;
+      if (deltaX <= 0)
+        continue;
+      widthSamples.push(deltaX / textLength);
+    }
+  }
+  if (widthSamples.length === 0) {
+    return 0;
+  }
+  return widthSamples.reduce((sum, value) => sum + value, 0) / widthSamples.length;
+};
+var estimatePageWidth = (items) => {
+  const xPositions = items.map((item) => item.xPosition).filter((value) => typeof value === "number");
+  if (xPositions.length < 2)
+    return null;
+  const minX = Math.min(...xPositions);
+  const maxX = Math.max(...xPositions);
+  const width = maxX - minX;
+  return width > 0 ? width : null;
+};
+var clamp = (value, min2, max) => Math.max(min2, Math.min(max, value));
 var clusterXPositions = (xPositions, tolerance) => {
   if (xPositions.length === 0)
     return [];
@@ -1855,7 +2456,7 @@ var processPage = async (pdfDocument, pageNum, sourceDescription, options, finge
     return cached;
   }
   const shouldIncludeImages = options.includeImageIndexes || options.insertMarkers;
-  const items = await extractPageContent(pdfDocument, pageNum, shouldIncludeImages, sourceDescription);
+  const { items } = await extractPageContent(pdfDocument, pageNum, shouldIncludeImages, sourceDescription);
   const normalized = buildNormalizedPageText(items, {
     preserveWhitespace: options.preserveWhitespace,
     trimLines: options.trimLines,
@@ -2033,20 +2634,24 @@ var processSingleSource = async (source, options) => {
     }
     if (pagesToProcess.length > 0) {
       const pageContents = new Array(pagesToProcess.length);
+      const imageWarnings = [];
       for (let i = 0;i < pagesToProcess.length; i += MAX_CONCURRENT_PAGES) {
         const batch = pagesToProcess.slice(i, i + MAX_CONCURRENT_PAGES);
         const batchResults = await Promise.all(batch.map((pageNum) => extractPageContent(pdfDocument, pageNum, options.includeImages, sourceDescription)));
-        batchResults.forEach((items, idx) => {
-          pageContents[i + idx] = items;
+        batchResults.forEach((result, idx) => {
+          pageContents[i + idx] = result;
+          if (result.warnings.length > 0) {
+            imageWarnings.push(...result.warnings);
+          }
         });
       }
-      output.page_contents = pageContents.map((items, idx) => ({
+      output.page_contents = pageContents.map((result, idx) => ({
         page: pagesToProcess[idx],
-        items
+        items: result.items
       }));
-      const extractedPageTexts = pageContents.map((items, idx) => ({
+      const extractedPageTexts = pageContents.map((result, idx) => ({
         page: pagesToProcess[idx],
-        text: items.filter((item) => item.type === "text").map((item) => item.textContent).join("")
+        text: result.items.filter((item) => item.type === "text").map((item) => item.textContent).join("")
       }));
       if (targetPages.pages) {
         output.page_texts = extractedPageTexts;
@@ -2056,10 +2661,13 @@ var processSingleSource = async (source, options) => {
 `);
       }
       if (options.includeImages) {
-        const extractedImages = pageContents.flatMap((items) => items.filter((item) => item.type === "image" && item.imageData)).map((item) => item.imageData).filter((img) => img !== undefined);
+        const extractedImages = pageContents.flatMap((result) => result.items.filter((item) => item.type === "image" && item.imageData)).map((item) => item.imageData).filter((img) => img !== undefined);
         if (extractedImages.length > 0) {
           output.images = extractedImages;
         }
+      }
+      if (imageWarnings.length > 0) {
+        output.warnings = [...output.warnings ?? [], ...imageWarnings];
       }
     }
     individualResult = { ...individualResult, data: output, success: true };
@@ -2280,7 +2888,7 @@ var getPageLabelsSafe2 = async (pdfDocument, sourceDescription) => {
   return null;
 };
 var collectPageHitData = async (pdfDocument, pageNum, sourceDescription, options) => {
-  const items = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
+  const { items } = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
   return buildNormalizedPageText(items, {
     preserveWhitespace: options.preserveWhitespace,
     trimLines: options.trimLines,

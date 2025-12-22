@@ -183,6 +183,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
       data: new Uint8Array(Buffer.from('mock pdf content')),
       cMapUrl: expect.stringContaining('cmaps'),
       cMapPacked: true,
+      canvasFactory: expect.any(Object),
     });
     expect(mockGetMetadata).toHaveBeenCalled();
     expect(mockGetPage).toHaveBeenCalledTimes(3);
@@ -229,6 +230,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
       data: new Uint8Array(Buffer.from('mock pdf content')),
       cMapUrl: expect.stringContaining('cmaps'),
       cMapPacked: true,
+      canvasFactory: expect.any(Object),
     });
     expect(mockGetMetadata).not.toHaveBeenCalled();
 
@@ -547,6 +549,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
       data: new Uint8Array(Buffer.from('mock pdf content')),
       cMapUrl: expect.stringContaining('cmaps'),
       cMapPacked: true,
+      canvasFactory: expect.any(Object),
     });
     const urlCallArgs = mockGetDocument.mock.calls.find((call) => {
       const data = call[0]?.data as Uint8Array | undefined;

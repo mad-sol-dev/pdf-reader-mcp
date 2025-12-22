@@ -72,11 +72,12 @@
   },
   "dependencies": {
     "@mistralai/mistralai": "^1.2.1",
+    "@napi-rs/canvas": "^0.1.86",
     "@sylphx/mcp-server-sdk": "^2.1.0",
     "@sylphx/vex": "^0.1.11",
-    "canvas": "^3.2.0",
+    "dotenv": "^17.2.3",
     "glob": "^13.0.0",
-    "pdfjs-dist": "^5.4.449",
+    "pdfjs-dist": "4.4.168",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {

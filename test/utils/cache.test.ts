@@ -1,12 +1,24 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { buildOcrProviderKey, clearCache, getCachedOcrText, setCachedOcrText } from '../../src/utils/cache.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildOcrProviderKey,
+  clearCache,
+  configureCache,
+  getCachedOcrText,
+  getCachedPageText,
+  getCacheStats,
+  resetCacheConfig,
+  setCachedOcrText,
+  setCachedPageText,
+} from '../../src/utils/cache.js';
 
 const fingerprint = 'fingerprint-123';
 const targetBase = 'image-1-0';
 
 describe('OCR cache provider awareness', () => {
   afterEach(() => {
-    clearCache('ocr');
+    clearCache('all');
+    resetCacheConfig();
+    vi.useRealTimers();
   });
 
   it('creates distinct cache entries for different providers', () => {
@@ -34,5 +46,53 @@ describe('OCR cache provider awareness', () => {
 
     expect(getCachedOcrText(fingerprint, keyWithDifferentScale)).toBeUndefined();
     expect(getCachedOcrText(fingerprint, keyWithScale)?.text).toBe('scaled');
+  });
+
+  it('evicts least recently used entries when exceeding max size', () => {
+    configureCache('ocr', { maxEntries: 2 });
+
+    const firstKey = `${targetBase}-a`;
+    const secondKey = `${targetBase}-b`;
+    const thirdKey = `${targetBase}-c`;
+
+    setCachedOcrText(fingerprint, firstKey, { text: 'first' });
+    setCachedOcrText(fingerprint, secondKey, { text: 'second' });
+
+    // Access the first key to make it most recently used
+    expect(getCachedOcrText(fingerprint, firstKey)?.text).toBe('first');
+
+    setCachedOcrText(fingerprint, thirdKey, { text: 'third' });
+
+    expect(getCachedOcrText(fingerprint, secondKey)).toBeUndefined();
+    expect(getCachedOcrText(fingerprint, firstKey)?.text).toBe('first');
+    expect(getCachedOcrText(fingerprint, thirdKey)?.text).toBe('third');
+
+    const stats = getCacheStats();
+    expect(stats.ocr_entries).toBe(2);
+    expect(stats.ocr_evictions).toBe(1);
+  });
+
+  it('expires entries after TTL duration', () => {
+    vi.useFakeTimers();
+    configureCache('text', { maxEntries: 3, ttlMs: 1000 });
+
+    const pageOptions = {
+      includeImageIndexes: false,
+      preserveWhitespace: false,
+      trimLines: true,
+    } as const;
+
+    setCachedPageText(fingerprint, 1, pageOptions, {
+      page_number: 1,
+      page_index: 0,
+      page_label: null,
+      lines: [],
+      text: 'temporary',
+    });
+
+    vi.advanceTimersByTime(1500);
+
+    expect(getCachedPageText(fingerprint, 1, pageOptions)).toBeUndefined();
+    expect(getCacheStats().text_evictions).toBe(1);
   });
 });

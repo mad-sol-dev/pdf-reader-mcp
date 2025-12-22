@@ -3,6 +3,7 @@ import { renderPageToPng } from '../pdf/render.js';
 import { ocrPageArgsSchema } from '../schemas/ocr.js';
 import type { OcrResult } from '../types/pdf.js';
 import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
+import { getCachedOcrPage, setCachedOcrPage } from '../utils/diskCache.js';
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import type { OcrProviderOptions } from '../utils/ocr.js';
@@ -48,6 +49,8 @@ const performPageOcr = async (
     const renderScale = scale ?? 1.5;
     const providerKey = buildOcrProviderKey(provider);
     const cacheKey = `page-${page}#scale-${renderScale}#provider-${providerKey}`;
+
+    // Layer 1: In-memory cache (fast)
     const cached = useCache ? getCachedOcrText(fingerprint, cacheKey) : undefined;
 
     if (cached) {
@@ -60,10 +63,44 @@ const performPageOcr = async (
       );
     }
 
+    // Layer 2: Disk cache (persistent) - only for file-based PDFs
+    if (useCache && source.path) {
+      const diskCached = getCachedOcrPage(source.path, fingerprint, page, providerKey);
+      if (diskCached) {
+        // Load into memory cache for next time
+        setCachedOcrText(fingerprint, cacheKey, {
+          text: diskCached.text,
+          provider: provider?.name ?? 'unknown',
+        });
+
+        logger.debug('Loaded OCR result from disk cache', { page, path: source.path });
+
+        return buildCachedResult(
+          sourceDescription,
+          fingerprint,
+          page,
+          provider?.name,
+          diskCached.text
+        );
+      }
+    }
+
+    // Layer 3: API call (slow, expensive)
     const rendered = await renderPageToPng(pdfDocument, page, renderScale);
     const ocr = await performOcr(rendered.data, provider);
 
+    // Save to both cache layers
     setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
+
+    if (source.path) {
+      setCachedOcrPage(source.path, fingerprint, page, providerKey, provider?.name ?? 'unknown', {
+        text: ocr.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString(),
+        scale: renderScale,
+      });
+      logger.debug('Saved OCR result to disk cache', { page, path: source.path });
+    }
 
     return {
       source: sourceDescription,

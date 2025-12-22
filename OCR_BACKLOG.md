@@ -1,8 +1,15 @@
 # OCR Implementation - Status & Backlog
 
 **Status:** ✅ Implementation complete, ⚠️ Documentation incomplete
-**Last Updated:** 2025-12-21
+**Last Updated:** 2025-12-22
 **API Version Checked:** Mistral API 2025-12 (mistral-large-2512, mistral-ocr-2512)
+
+## 🆕 Update Summary (2025-12-22)
+- ✅ **Implemented persistent disk cache** for OCR results
+- ✅ 3-layer cache architecture: in-memory → disk → API
+- ✅ JSON cache files stored alongside PDFs (`{basename}_ocr.json`)
+- ✅ Fingerprint validation to detect PDF changes
+- ✅ Supports both page and image OCR caching
 
 ## 🆕 Update Summary (2025-12-21)
 - ✅ Verified against current Mistral API documentation
@@ -34,10 +41,66 @@
 - Generic HTTP OCR provider pattern
 - Page OCR (`pdf_ocr_page`) with configurable scale
 - Image OCR (`pdf_ocr_image`) for embedded images
-- Fingerprint-based caching (text + provider key)
+- **3-layer caching architecture** (NEW in v1.4.0):
+  - **Layer 1: In-memory cache** - Fast, volatile (survives within session)
+  - **Layer 2: Disk cache** - Persistent, survives restarts (JSON files)
+  - **Layer 3: API calls** - Slow, expensive (only when cache misses)
+- Fingerprint-based cache validation (detects PDF modifications)
 - Mock provider for testing
 - Vex schema validation for provider config
 - Cache management tools (`pdf_cache_stats`, `pdf_cache_clear`)
+
+### 💾 Disk Cache Implementation
+
+**File Format:** `{pdf_basename}_ocr.json` (stored in same directory as PDF)
+
+**Structure:**
+```json
+{
+  "fingerprint": "sha256-hash-of-first-64kb",
+  "pdf_path": "/path/to/document.pdf",
+  "created_at": "2025-12-22T...",
+  "updated_at": "2025-12-22T...",
+  "ocr_provider": "mistral-ocr-2512",
+  "pages": {
+    "2": {
+      "text": "OCR result...",
+      "markdown": "...",
+      "tables": [...],
+      "hyperlinks": [...],
+      "dimensions": {...},
+      "provider_hash": "sha256...",
+      "cached_at": "2025-12-22T...",
+      "scale": 1.5
+    }
+  },
+  "images": {
+    "2/0": {
+      "text": "OCR result for image 0 on page 2",
+      "markdown": "...",
+      "provider_hash": "sha256...",
+      "cached_at": "2025-12-22T..."
+    }
+  }
+}
+```
+
+**Benefits:**
+- ✅ Survives MCP server restarts
+- ✅ Reduces API costs (expensive Mistral OCR calls)
+- ✅ Can be version-controlled with PDFs
+- ✅ Shareable between users/machines
+- ✅ Automatic invalidation on PDF changes (fingerprint mismatch)
+
+**Limitations:**
+- Only works for file-based PDFs (not URLs)
+- Cache file stored in PDF directory (requires write permissions)
+- No automatic cleanup of stale cache files
+
+**Code Locations:**
+- **Types:** `src/types/cache.ts` - Cache structure definitions
+- **Utilities:** `src/utils/diskCache.ts` - Load/save functions
+- **Integration:** `src/handlers/ocrPage.ts`, `src/handlers/ocrImage.ts` - Handler integration
 
 ### ⚠️ Mistral Integration Status
 **No Mistral-specific code exists** - uses generic HTTP provider.

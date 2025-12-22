@@ -1139,6 +1139,178 @@ var ocrImageArgsSchema = object8({
   cache: optional6(bool4(description7("Use cached OCR result when available.")))
 });
 
+// src/utils/diskCache.ts
+import fs2 from "node:fs";
+import path2 from "node:path";
+var logger11 = createLogger("DiskCache");
+var getCacheFilePath = (pdfPath) => {
+  const dir = path2.dirname(pdfPath);
+  const basename = path2.basename(pdfPath, path2.extname(pdfPath));
+  return path2.join(dir, `${basename}_ocr.json`);
+};
+var loadOcrCache = (pdfPath) => {
+  const cachePath = getCacheFilePath(pdfPath);
+  try {
+    if (!fs2.existsSync(cachePath)) {
+      return null;
+    }
+    const content = fs2.readFileSync(cachePath, "utf-8");
+    const cache = JSON.parse(content);
+    if (!cache.fingerprint || !cache.pages || !cache.images) {
+      logger11.warn("Invalid cache file structure", { cachePath });
+      return null;
+    }
+    logger11.debug("Loaded OCR cache from disk", {
+      cachePath,
+      pageCount: Object.keys(cache.pages).length,
+      imageCount: Object.keys(cache.images).length
+    });
+    return cache;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger11.warn("Failed to load OCR cache", { cachePath, error: message });
+    return null;
+  }
+};
+var saveOcrCache = (pdfPath, cache) => {
+  const cachePath = getCacheFilePath(pdfPath);
+  try {
+    cache.updated_at = new Date().toISOString();
+    const dir = path2.dirname(cachePath);
+    if (!fs2.existsSync(dir)) {
+      fs2.mkdirSync(dir, { recursive: true });
+    }
+    fs2.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf-8");
+    logger11.debug("Saved OCR cache to disk", {
+      cachePath,
+      pageCount: Object.keys(cache.pages).length,
+      imageCount: Object.keys(cache.images).length
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger11.error("Failed to save OCR cache", { cachePath, error: message });
+    throw new Error(`Failed to save OCR cache: ${message}`);
+  }
+};
+var getCachedOcrPage = (pdfPath, fingerprint, page, providerHash) => {
+  const cache = loadOcrCache(pdfPath);
+  if (!cache) {
+    return null;
+  }
+  if (cache.fingerprint !== fingerprint) {
+    logger11.warn("PDF fingerprint mismatch, cache invalidated", {
+      pdfPath,
+      cached: cache.fingerprint,
+      current: fingerprint
+    });
+    return null;
+  }
+  const pageKey = String(page);
+  const result = cache.pages[pageKey];
+  if (!result) {
+    return null;
+  }
+  if (result.provider_hash !== providerHash) {
+    logger11.debug("Provider hash mismatch for page", { page, pageKey });
+    return null;
+  }
+  logger11.debug("Cache hit for page", { page });
+  return result;
+};
+var setCachedOcrPage = (pdfPath, fingerprint, page, providerHash, ocrProvider, result) => {
+  let cache = loadOcrCache(pdfPath);
+  if (!cache) {
+    cache = {
+      fingerprint,
+      pdf_path: pdfPath,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ocr_provider: ocrProvider,
+      pages: {},
+      images: {}
+    };
+  }
+  if (cache.fingerprint !== fingerprint) {
+    logger11.warn("PDF fingerprint changed, resetting cache", { pdfPath });
+    cache = {
+      fingerprint,
+      pdf_path: pdfPath,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ocr_provider: ocrProvider,
+      pages: {},
+      images: {}
+    };
+  }
+  const pageKey = String(page);
+  cache.pages[pageKey] = {
+    ...result,
+    provider_hash: providerHash,
+    cached_at: new Date().toISOString()
+  };
+  saveOcrCache(pdfPath, cache);
+  logger11.debug("Cached OCR result for page", { page });
+};
+var getCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash) => {
+  const cache = loadOcrCache(pdfPath);
+  if (!cache) {
+    return null;
+  }
+  if (cache.fingerprint !== fingerprint) {
+    logger11.warn("PDF fingerprint mismatch, cache invalidated", {
+      pdfPath,
+      cached: cache.fingerprint,
+      current: fingerprint
+    });
+    return null;
+  }
+  const imageKey = `${page}/${imageIndex}`;
+  const result = cache.images[imageKey];
+  if (!result) {
+    return null;
+  }
+  if (result.provider_hash !== providerHash) {
+    logger11.debug("Provider hash mismatch for image", { page, imageIndex });
+    return null;
+  }
+  logger11.debug("Cache hit for image", { page, imageIndex });
+  return result;
+};
+var setCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash, ocrProvider, result) => {
+  let cache = loadOcrCache(pdfPath);
+  if (!cache) {
+    cache = {
+      fingerprint,
+      pdf_path: pdfPath,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ocr_provider: ocrProvider,
+      pages: {},
+      images: {}
+    };
+  }
+  if (cache.fingerprint !== fingerprint) {
+    logger11.warn("PDF fingerprint changed, resetting cache", { pdfPath });
+    cache = {
+      fingerprint,
+      pdf_path: pdfPath,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ocr_provider: ocrProvider,
+      pages: {},
+      images: {}
+    };
+  }
+  const imageKey = `${page}/${imageIndex}`;
+  cache.images[imageKey] = {
+    ...result,
+    provider_hash: providerHash,
+    cached_at: new Date().toISOString()
+  };
+  saveOcrCache(pdfPath, cache);
+  logger11.debug("Cached OCR result for image", { page, imageIndex });
+};
+
 // src/utils/fingerprint.ts
 import crypto from "node:crypto";
 var getDocumentFingerprint = (pdfDocument, sourceDescription) => {
@@ -1220,7 +1392,7 @@ var performOcr = async (base64Image, provider) => {
 };
 
 // src/handlers/ocrImage.ts
-var logger11 = createLogger("OcrImage");
+var logger12 = createLogger("OcrImage");
 var buildCachedResult = (sourceDescription, fingerprint, page, index, provider, text8) => ({
   source: sourceDescription,
   success: true,
@@ -1245,6 +1417,17 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
     if (cached) {
       return buildCachedResult(sourceDescription, fingerprint, page, index, cached.provider, cached.text);
     }
+    if (useCache && source.path) {
+      const diskCached = getCachedOcrImage(source.path, fingerprint, page, index, providerKey);
+      if (diskCached) {
+        setCachedOcrText(fingerprint, cacheKey, {
+          text: diskCached.text,
+          provider: provider?.name ?? "unknown"
+        });
+        logger12.debug("Loaded OCR result from disk cache", { page, index, path: source.path });
+        return buildCachedResult(sourceDescription, fingerprint, page, index, provider?.name, diskCached.text);
+      }
+    }
     const images = await extractImages(pdfDocument, [page]);
     const target = images.find((img) => img.page === page && img.index === index);
     if (!target) {
@@ -1252,6 +1435,14 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
     }
     const ocr = await performOcr(target.data, provider);
     setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
+    if (source.path) {
+      setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider?.name ?? "unknown", {
+        text: ocr.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString()
+      });
+      logger12.debug("Saved OCR result to disk cache", { page, index, path: source.path });
+    }
     return {
       source: sourceDescription,
       success: true,
@@ -1277,7 +1468,7 @@ var executeOcrImage = async (input) => {
     return [text7(JSON.stringify(result, null, 2))];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger11.error("Failed to OCR image", { sourceDescription, page, index, error: message });
+    logger12.error("Failed to OCR image", { sourceDescription, page, index, error: message });
     return toolError7(`Failed to OCR image from ${sourceDescription}. Reason: ${message}`);
   }
 };
@@ -1302,7 +1493,7 @@ import { text as text8, tool as tool8, toolError as toolError8 } from "@sylphx/m
 
 // src/pdf/render.ts
 import { createCanvas } from "canvas";
-var logger12 = createLogger("Renderer");
+var logger13 = createLogger("Renderer");
 
 class NodeCanvasFactory {
   create(width, height) {
@@ -1335,7 +1526,7 @@ var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
     await page.render(renderContext).promise;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger12.error("Error rendering page", { pageNum, error: message });
+    logger13.error("Error rendering page", { pageNum, error: message });
     throw error;
   }
   const pngBuffer = canvas.toBuffer("image/png");
@@ -1349,7 +1540,7 @@ var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
 };
 
 // src/handlers/ocrPage.ts
-var logger13 = createLogger("OcrPage");
+var logger14 = createLogger("OcrPage");
 var buildCachedResult2 = (sourceDescription, fingerprint, page, provider, text9) => ({
   source: sourceDescription,
   success: true,
@@ -1375,9 +1566,29 @@ var performPageOcr = async (source, sourceDescription, page, scale, provider, us
     if (cached) {
       return buildCachedResult2(sourceDescription, fingerprint, page, cached.provider ?? provider?.name, cached.text);
     }
+    if (useCache && source.path) {
+      const diskCached = getCachedOcrPage(source.path, fingerprint, page, providerKey);
+      if (diskCached) {
+        setCachedOcrText(fingerprint, cacheKey, {
+          text: diskCached.text,
+          provider: provider?.name ?? "unknown"
+        });
+        logger14.debug("Loaded OCR result from disk cache", { page, path: source.path });
+        return buildCachedResult2(sourceDescription, fingerprint, page, provider?.name, diskCached.text);
+      }
+    }
     const rendered = await renderPageToPng(pdfDocument, page, renderScale);
     const ocr = await performOcr(rendered.data, provider);
     setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
+    if (source.path) {
+      setCachedOcrPage(source.path, fingerprint, page, providerKey, provider?.name ?? "unknown", {
+        text: ocr.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString(),
+        scale: renderScale
+      });
+      logger14.debug("Saved OCR result to disk cache", { page, path: source.path });
+    }
     return {
       source: sourceDescription,
       success: true,
@@ -1403,7 +1614,7 @@ var executeOcrPage = async (input) => {
     return [text8(JSON.stringify(result, null, 2))];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger13.error("Failed to OCR page", { sourceDescription, page, error: message });
+    logger14.error("Failed to OCR page", { sourceDescription, page, error: message });
     return toolError8(`Failed to OCR page from ${sourceDescription}. Reason: ${message}`);
   }
 };
@@ -1632,7 +1843,7 @@ var readPagesArgsSchema = object9({
 });
 
 // src/handlers/readPages.ts
-var logger14 = createLogger("ReadPages");
+var logger15 = createLogger("ReadPages");
 var processPage = async (pdfDocument, pageNum, sourceDescription, options, fingerprint, pageLabel) => {
   const cached = getCachedPageText(fingerprint, pageNum, options);
   if (cached) {
@@ -1670,7 +1881,7 @@ var getPageLabelsSafe = async (pdfDocument, sourceDescription) => {
     return await pdfDocument.getPageLabels();
   } catch (labelError) {
     const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger14.warn("Error retrieving page labels", { sourceDescription, error: message });
+    logger15.warn("Error retrieving page labels", { sourceDescription, error: message });
   }
   return null;
 };
@@ -1695,7 +1906,7 @@ var destroyPdfDocument = async (pdfDocument, sourceDescription) => {
     await pdfDocument.destroy();
   } catch (destroyError) {
     const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger14.warn("Error destroying PDF document", { sourceDescription, error: message });
+    logger15.warn("Error destroying PDF document", { sourceDescription, error: message });
   }
 };
 var processSourcePages = async (source, sourceDescription, options, allowFullDocument) => {
@@ -1791,7 +2002,7 @@ var readPdfArgsSchema = object10({
 });
 
 // src/handlers/readPdf.ts
-var logger15 = createLogger("ReadPdf");
+var logger16 = createLogger("ReadPdf");
 var processSingleSource = async (source, options) => {
   const MAX_CONCURRENT_PAGES = 5;
   const sourceDescription = source.path ?? source.url ?? "unknown source";
@@ -1863,7 +2074,7 @@ var processSingleSource = async (source, options) => {
         await pdfDocument.destroy();
       } catch (destroyError) {
         const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-        logger15.warn("Error destroying PDF document", { sourceDescription, error: message });
+        logger16.warn("Error destroying PDF document", { sourceDescription, error: message });
       }
     }
   }
@@ -1944,7 +2155,7 @@ var renderPageArgsSchema = object11({
 });
 
 // src/handlers/renderPage.ts
-var logger16 = createLogger("RenderPage");
+var logger17 = createLogger("RenderPage");
 var renderTargetPage = async (source, sourceDescription, page, scale) => {
   return withPdfDocument(source, sourceDescription, async (pdfDocument) => {
     const totalPages = pdfDocument.numPages;
@@ -1977,7 +2188,7 @@ var pdfRenderPage = tool11().description("Rasterize a PDF page to PNG and return
     return [text11(JSON.stringify(result.metadata, null, 2)), image3(result.imageData, "image/png")];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger16.error("Failed to render page", { sourceDescription, page, error: message });
+    logger17.error("Failed to render page", { sourceDescription, page, error: message });
     return toolError11(`Failed to render page from ${sourceDescription}. Reason: ${message}`);
   }
 });
@@ -2012,7 +2223,7 @@ var pdfSearchArgsSchema = object12({
 });
 
 // src/handlers/searchPdf.ts
-var logger17 = createLogger("PdfSearch");
+var logger18 = createLogger("PdfSearch");
 var findPlainMatches = (textToSearch, query, options, remaining) => {
   const matches = [];
   const haystack = options.caseSensitive ? textToSearch : textToSearch.toLowerCase();
@@ -2058,7 +2269,7 @@ var getPageLabelsSafe2 = async (pdfDocument, sourceDescription) => {
     return await pdfDocument.getPageLabels();
   } catch (labelError) {
     const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger17.warn("Error retrieving page labels", { sourceDescription, error: message });
+    logger18.warn("Error retrieving page labels", { sourceDescription, error: message });
   }
   return null;
 };
@@ -2111,7 +2322,7 @@ var destroyPdfDocument2 = async (pdfDocument, sourceDescription) => {
     await pdfDocument.destroy();
   } catch (destroyError) {
     const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger17.warn("Error destroying PDF document", { sourceDescription, error: message });
+    logger18.warn("Error destroying PDF document", { sourceDescription, error: message });
   }
 };
 var processSearchSource = async (source, sourceDescription, options, allowFullDocument) => {

@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { NodeCanvasFactory } from './canvasFactory.js';
 import { ErrorCode, PdfError } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { resolvePath } from '../utils/pathUtils.js';
@@ -254,10 +255,12 @@ export const loadPdfDocument = async (
     );
   }
 
+  const canvasFactory = new NodeCanvasFactory();
   const loadingTask = getDocument({
     data: pdfDataSource,
     cMapUrl: CMAP_URL,
     cMapPacked: true,
+    canvasFactory,
   });
 
   try {

@@ -67,21 +67,38 @@
 
 ---
 
-## Method 3: Mistral OCR API (NOT YET IMPLEMENTED)
+## Method 3: Mistral OCR API ✅ IMPLEMENTED
 
-**Process:** pdf-reader-mcp → Image/PDF → Mistral OCR wrapper → mistral-ocr-2512
+**Process:** pdf-reader-mcp → Image/PDF → Mistral OCR (direct SDK) → mistral-ocr-latest
 
-**Current Status:** ❌ Not implemented (Vision wrapper built instead)
+**Current Status:** ✅ **Implemented** (2025-12-22)
 
-**API Needed:** `client.ocr.process()`
-**Model:** `mistral-ocr-2512` (OCR 3)
-**Endpoint:** `/v1/ocr`
+**API Used:** `client.ocr.process()` (native integration, no wrapper needed)
+**Model:** `mistral-ocr-latest` (OCR 3)
+**Provider Type:** `'mistral-ocr'`
 
-**Expected Features:**
-- Structured output: `.markdown`, `.tables[]`, `.images[]`
-- Precise text extraction from technical diagrams
-- Table detection with HTML/markdown output
-- Header/footer extraction
+**Features:**
+- ✅ Structured output: `.markdown`, `.tables[]`, `.images[]`
+- ✅ Precise text extraction from technical diagrams
+- ✅ Table detection with HTML/markdown output
+- ✅ 3-step workflow: Upload → OCR → Cleanup (automatic)
+- ✅ Cleanup in finally block (no temp file leaks)
+
+**Usage Example:**
+```json
+{
+  "tool": "pdf_ocr_page",
+  "arguments": {
+    "source": { "path": "N3290x_Design_Guide_A1.pdf" },
+    "page": 890,
+    "provider": {
+      "type": "mistral-ocr",
+      "model": "mistral-ocr-latest",
+      "extras": { "tableFormat": "markdown" }
+    }
+  }
+}
+```
 
 **Expected Result for our diagram:**
 ```json
@@ -99,11 +116,13 @@
 }
 ```
 
-**Quality:** Expected ✅✅ Best for precise data extraction
+**Quality:** ✅✅ **Best for precise data extraction**
 
 **Cost:** $2 per 1,000 pages = $0.002 per page ($1 with Batch API)
 
-**Cache:** ✅ Persistent disk cache (same as Vision wrapper)
+**Cache:** ✅ Persistent disk cache (`N3290x_Design_Guide_A1_ocr.json`)
+
+**Implementation:** `src/utils/ocr.ts:handleMistralOcrDedicated()`
 
 ---
 
@@ -147,29 +166,31 @@
 
 ## Action Items
 
-- [x] Build Mistral Vision wrapper (completed)
-- [ ] Build Mistral OCR wrapper (`client.ocr.process()`)
-- [ ] Implement two-tier workflow
+- [x] Build Mistral Vision wrapper (completed 2025-12-21)
+- [x] **Build Mistral OCR API integration** (completed 2025-12-22) ✨
+- [x] Document both approaches in guide (completed 2025-12-22)
+- [ ] Implement two-tier workflow (Vision → OCR decision)
 - [ ] Add Vision classification as optional step in pdf-reader-mcp
-- [ ] Document both approaches in guide
+- [ ] **Test with actual N3290x timing diagram** (ready to test!)
 
 ---
 
 ## Technical Notes
 
-### Current Mistral Vision Wrapper
-- ✅ Working: POST /v1/ocr endpoint
+### Mistral Vision API (type: 'mistral')
+- ✅ Working: Direct SDK integration
 - ✅ Uses: `client.chat.complete()` with vision
 - ✅ Accepts: Base64 images, data URIs
-- ✅ Returns: `{ text, language }`
+- ✅ Returns: `{ text, provider }`
 - ⚠️ Limitation: Vision API, not OCR API - good for understanding, not extraction
 
-### Needed: Mistral OCR Wrapper
-- ❌ Not built yet
-- Should use: `client.ocr.process()`
-- Should accept: PDFs, base64 images
-- Should return: Structured data (markdown, tables, images)
-- Features: table_format, extract_header/footer, include_image_base64
+### Mistral OCR API (type: 'mistral-ocr') ✨ NEW
+- ✅ **Now implemented!** Direct SDK integration
+- ✅ Uses: `client.ocr.process()`
+- ✅ Accepts: Base64 images (PNG from rendered PDF pages)
+- ✅ Returns: Structured markdown from `.pages[0].markdown`
+- ✅ Features: `tableFormat` (markdown/html), automatic cleanup
+- ✅ 3-step workflow: Upload → OCR → Delete (all automatic)
 
 ### Why Both?
 - **Vision:** Semantic understanding ("This is a Power-on sequence diagram")
@@ -182,3 +203,40 @@
 1. Quick Vision classification to understand context
 2. Deep OCR analysis to extract precise values
 3. Both cached for future reference
+
+---
+
+## 🧪 Ready to Test!
+
+**Test the new Mistral OCR API on Page 890:**
+
+```json
+{
+  "tool": "pdf_ocr_page",
+  "arguments": {
+    "source": {
+      "path": "/home/martinm/programme/Projekte/zk-inkjet-printer/docs/vendor/N3290x_Design_Guide_A1.pdf"
+    },
+    "page": 890,
+    "provider": {
+      "type": "mistral-ocr",
+      "model": "mistral-ocr-latest",
+      "api_key": "${MISTRAL_API_KEY}",
+      "extras": {
+        "tableFormat": "markdown"
+      }
+    },
+    "cache": true,
+    "smart_ocr": false
+  }
+}
+```
+
+**Expected Output:**
+- Precise label extraction from timing diagram
+- All voltage values, thresholds, and timing parameters
+- Signal names: VDD33, 1.8V Core Power, RESET, Internal RESET
+- Structured markdown format
+- Cached in `N3290x_Design_Guide_A1_ocr.json`
+
+**Compare with Vision API (type: 'mistral')** to see the difference between semantic understanding vs. data extraction!

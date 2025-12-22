@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+// Load environment variables from .env file
+import 'dotenv/config';
+
+// IMPORTANT: Load polyfills first, before PDF.js
+import './pdf/polyfills.js';
+
 import { createServer, stdio } from '@sylphx/mcp-server-sdk';
 import { pdfCacheClear, pdfCacheStats } from './handlers/cache.js';
 import { pdfGetImage } from './handlers/getImage.js';

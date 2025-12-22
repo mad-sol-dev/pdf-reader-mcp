@@ -577,6 +577,9 @@ var getImageArgsSchema = object3({
   index: num2(int2, gte2(0), description3("0-based image index within the page."))
 });
 
+// src/utils/ocrRecommendation.ts
+var OCR_IMAGE_RECOMMENDATION = "⚠️ For text extraction from this image, consider using pdf_ocr_image with Mistral OCR (faster, cheaper, cached). Manual image analysis via LLMs like Claude is more expensive, does not create persistent cache files, and is less precise for text extraction.";
+
 // src/pdf/loader.ts
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -667,6 +670,7 @@ var buildImageMetadata = (targetImage, warnings) => ({
   width: targetImage.width,
   height: targetImage.height,
   format: targetImage.format,
+  recommendation: OCR_IMAGE_RECOMMENDATION,
   warnings: warnings.length > 0 ? warnings : undefined
 });
 var resolveTargetPages = (sourcePages, sourceDescription, page) => {
@@ -1028,6 +1032,7 @@ var MAX_CONCURRENT_SOURCES = 3;
 var summarizeImages = (images, warnings) => ({
   images,
   total_images: images.length,
+  recommendation: OCR_IMAGE_RECOMMENDATION,
   ...warnings.length > 0 ? { warnings } : {}
 });
 var collectImages = async (source, sourceDescription, allowFullDocument) => {
@@ -2170,7 +2175,8 @@ var renderTargetPage = async (source, sourceDescription, page, scale) => {
         width: rendered.width,
         height: rendered.height,
         scale: rendered.scale,
-        fingerprint
+        fingerprint,
+        recommendation: OCR_IMAGE_RECOMMENDATION
       },
       imageData: rendered.data
     };

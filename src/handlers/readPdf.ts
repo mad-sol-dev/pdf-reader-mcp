@@ -78,6 +78,7 @@ const processSingleSource = async (
       const pageContents: Array<Awaited<ReturnType<typeof extractPageContent>>> = new Array(
         pagesToProcess.length
       );
+      const imageWarnings: string[] = [];
 
       for (let i = 0; i < pagesToProcess.length; i += MAX_CONCURRENT_PAGES) {
         const batch = pagesToProcess.slice(i, i + MAX_CONCURRENT_PAGES);
@@ -93,21 +94,24 @@ const processSingleSource = async (
           )
         );
 
-        batchResults.forEach((items, idx) => {
-          pageContents[i + idx] = items;
+        batchResults.forEach((result, idx) => {
+          pageContents[i + idx] = result;
+          if (result.warnings.length > 0) {
+            imageWarnings.push(...result.warnings);
+          }
         });
       }
 
       // Store page contents for ordered retrieval
-      output.page_contents = pageContents.map((items, idx) => ({
+      output.page_contents = pageContents.map((result, idx) => ({
         page: pagesToProcess[idx] as number,
-        items,
+        items: result.items,
       }));
 
       // For backward compatibility, also provide text-only outputs
-      const extractedPageTexts = pageContents.map((items, idx) => ({
+      const extractedPageTexts = pageContents.map((result, idx) => ({
         page: pagesToProcess[idx] as number,
-        text: items
+        text: result.items
           .filter((item) => item.type === 'text')
           .map((item) => item.textContent)
           .join(''),
@@ -124,13 +128,19 @@ const processSingleSource = async (
       // Extract image metadata for JSON response
       if (options.includeImages) {
         const extractedImages = pageContents
-          .flatMap((items) => items.filter((item) => item.type === 'image' && item.imageData))
+          .flatMap((result) =>
+            result.items.filter((item) => item.type === 'image' && item.imageData)
+          )
           .map((item) => item.imageData)
           .filter((img): img is ExtractedImage => img !== undefined);
 
         if (extractedImages.length > 0) {
           output.images = extractedImages;
         }
+      }
+
+      if (imageWarnings.length > 0) {
+        output.warnings = [...(output.warnings ?? []), ...imageWarnings];
       }
     }
 

@@ -43,11 +43,12 @@ const collectImages = async (
         samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT,
       }
     );
-    const images = await extractImages(pdfDocument, pagesToProcess);
+    const { images, warnings: imageWarnings } = await extractImages(pdfDocument, pagesToProcess);
     const warnings = [
       ...(rangeWarnings ?? []),
       ...buildWarnings(invalidPages, totalPages),
       ...(guardWarning ? [guardWarning] : []),
+      ...imageWarnings,
     ];
 
     const imageInfo: PdfImageInfo[] = images.map((img) => ({

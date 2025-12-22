@@ -267,18 +267,19 @@ describe('extractor', () => {
         getPage: vi.fn().mockResolvedValue(mockPage),
       } as unknown as pdfjsLib.PDFDocumentProxy;
 
-      const result = await extractImages(mockDocument, [1]);
+      const { images, warnings } = await extractImages(mockDocument, [1]);
 
-      expect(result.length).toBe(2);
-      expect(result[0]).toMatchObject({
+      expect(warnings).toEqual([]);
+      expect(images.length).toBe(2);
+      expect(images[0]).toMatchObject({
         page: 1,
         index: 0,
         width: 100,
         height: 50,
         format: 'rgba',
       });
-      expect(result[0].data).toBeDefined();
-      expect(result[0].data.length).toBeGreaterThan(0);
+      expect(images[0].data).toBeDefined();
+      expect(images[0].data.length).toBeGreaterThan(0);
     });
 
     it('should handle pages with no images', async () => {
@@ -296,7 +297,7 @@ describe('extractor', () => {
 
       const result = await extractImages(mockDocument, [1]);
 
-      expect(result).toEqual([]);
+      expect(result).toEqual({ images: [], warnings: [] });
     });
 
     it('should handle image extraction errors gracefully', async () => {
@@ -308,11 +309,44 @@ describe('extractor', () => {
 
       const result = await extractImages(mockDocument, [1]);
 
-      expect(result).toEqual([]);
+      expect(result.images).toEqual([]);
+      expect(result.warnings).toContain('image_extraction_page_failed:page=1');
       // Logger outputs message first, then structured JSON
       expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Error getting page for image extraction'));
 
       consoleWarnSpy.mockRestore();
+    });
+
+    it('should warn when image retrieval times out', async () => {
+      vi.useFakeTimers();
+      const mockPage = {
+        getOperatorList: vi.fn().mockResolvedValue({
+          fnArray: [OPS.paintImageXObject],
+          argsArray: [['img1']],
+        }),
+        objs: {
+          get: vi.fn((name: string, callback?: (data: unknown) => void) => {
+            if (typeof callback === 'function') {
+              return;
+            }
+            return undefined;
+          }),
+        },
+      };
+
+      const mockDocument = {
+        getPage: vi.fn().mockResolvedValue(mockPage),
+      } as unknown as pdfjsLib.PDFDocumentProxy;
+
+      const promise = extractImages(mockDocument, [1]);
+
+      await vi.advanceTimersByTimeAsync(10000);
+
+      const result = await promise;
+
+      expect(result.images).toEqual([]);
+      expect(result.warnings).toContain('image_extraction_timeout:page=1:image=img1');
+      vi.useRealTimers();
     });
 
     it('should skip images with invalid data', async () => {
@@ -334,7 +368,7 @@ describe('extractor', () => {
 
       const result = await extractImages(mockDocument, [1]);
 
-      expect(result).toEqual([]);
+      expect(result).toEqual({ images: [], warnings: [] });
     });
 
     it('should handle different image formats', async () => {
@@ -361,9 +395,9 @@ describe('extractor', () => {
         getPage: vi.fn().mockResolvedValue(mockPage),
       } as unknown as pdfjsLib.PDFDocumentProxy;
 
-      const result = await extractImages(mockDocument, [1]);
+      const { images } = await extractImages(mockDocument, [1]);
 
-      expect(result[0].format).toBe('grayscale');
+      expect(images[0].format).toBe('grayscale');
     });
 
     it('should extract images from multiple pages', async () => {
@@ -390,11 +424,12 @@ describe('extractor', () => {
         getPage: vi.fn().mockResolvedValue(mockPage),
       } as unknown as pdfjsLib.PDFDocumentProxy;
 
-      const result = await extractImages(mockDocument, [1, 2]);
+      const { images, warnings } = await extractImages(mockDocument, [1, 2]);
 
-      expect(result.length).toBe(2);
-      expect(result[0].page).toBe(1);
-      expect(result[1].page).toBe(2);
+      expect(warnings).toEqual([]);
+      expect(images.length).toBe(2);
+      expect(images[0].page).toBe(1);
+      expect(images[1].page).toBe(2);
     });
   });
 });
@@ -414,7 +449,7 @@ it('should skip images with empty argsArray', async () => {
 
   const result = await extractImages(mockDocument, [1]);
 
-  expect(result).toEqual([]);
+  expect(result).toEqual({ images: [], warnings: [] });
   expect(mockPage.objs.get).not.toHaveBeenCalled();
 });
 
@@ -442,7 +477,7 @@ it('should skip images missing required properties', async () => {
 
   const result = await extractImages(mockDocument, [1]);
 
-  expect(result).toEqual([]);
+  expect(result).toEqual({ images: [], warnings: [] });
 });
 
 it('should handle getOperatorList errors', async () => {
@@ -458,7 +493,8 @@ it('should handle getOperatorList errors', async () => {
 
   const result = await extractImages(mockDocument, [1]);
 
-  expect(result).toEqual([]);
+  expect(result.images).toEqual([]);
+  expect(result.warnings).toContain('image_extraction_page_failed:page=1');
   // Logger outputs message first, then structured JSON
   expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Error extracting images from page'));
 
@@ -481,7 +517,7 @@ it('should handle empty argsArray in operator list', async () => {
   } as unknown as pdfjsLib.PDFDocumentProxy;
 
   const result = await extractImages(mockDocument, [1]);
-  expect(result).toEqual([]);
+  expect(result).toEqual({ images: [], warnings: [] });
 });
 
 it('should handle null argsArray in operator list', async () => {
@@ -500,5 +536,5 @@ it('should handle null argsArray in operator list', async () => {
   } as unknown as pdfjsLib.PDFDocumentProxy;
 
   const result = await extractImages(mockDocument, [1]);
-  expect(result).toEqual([]);
+  expect(result).toEqual({ images: [], warnings: [] });
 });

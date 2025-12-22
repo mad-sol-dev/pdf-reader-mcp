@@ -16,6 +16,7 @@ const mockGetDocument = vi.fn();
 const mockReadFile = vi.fn();
 const mockStat = vi.fn();
 const mockExtractPageContent = vi.fn();
+const mockFetch = vi.fn();
 let actualExtractPageContent: typeof import('../../src/pdf/extractor.js')['extractPageContent'];
 let extractorModule: typeof import('../../src/pdf/extractor.js');
 
@@ -35,6 +36,8 @@ vi.mock('node:fs/promises', () => ({
   readFile: mockReadFile,
   stat: mockStat,
 }));
+
+vi.stubGlobal('fetch', mockFetch);
 
 // Dynamically import the handler *once* after mocks are defined
 // Define a more specific type for the handler's return value content
@@ -92,6 +95,9 @@ describe('handleReadPdfFunc Integration Tests', () => {
     vi.spyOn(extractorModule, 'extractPageContent').mockImplementation(mockExtractPageContent);
     // Reset mocks for pathUtils if we spy on it
     vi.spyOn(pathUtils, 'resolvePath').mockImplementation((p) => p); // Simple mock for resolvePath
+
+    mockFetch.mockReset();
+    mockFetch.mockRejectedValue(new Error('Unexpected fetch'));
 
     mockReadFile.mockResolvedValue(Buffer.from('mock pdf content'));
 
@@ -238,6 +244,55 @@ describe('handleReadPdfFunc Integration Tests', () => {
     }
   });
 
+  it('should surface image extraction timeout warnings', async () => {
+    vi.useFakeTimers();
+    const args = {
+      sources: [{ path: 'timeout.pdf', pages: [1] }],
+      include_full_text: false,
+      include_images: true,
+    };
+
+    mockGetPage.mockImplementation((pageNum: number) => {
+      if (pageNum === 1) {
+        return {
+          getTextContent: vi.fn().mockResolvedValueOnce({
+            items: [
+              {
+                str: `Mock page text ${String(pageNum)}`,
+                transform: [1, 0, 0, 1, 0, 110],
+              },
+            ],
+          }),
+          getOperatorList: vi.fn().mockResolvedValue({
+            fnArray: [89],
+            argsArray: [['img1']],
+          }),
+          objs: {
+            get: vi.fn((name: string, callback?: (data: unknown) => void) => {
+              if (typeof callback === 'function') {
+                return;
+              }
+              return undefined;
+            }),
+          },
+        };
+      }
+      throw new Error(`Mock getPage error: Invalid page number ${String(pageNum)}`);
+    });
+
+    const resultPromise = handler(args);
+    await vi.advanceTimersByTimeAsync(10000);
+    const result = await resultPromise;
+    vi.useRealTimers();
+
+    const payload = JSON.parse(result.content[0].text) as ExpectedResultType;
+    const warnings = payload.results[0]?.data
+      ? (payload.results[0].data as { warnings?: string[] }).warnings
+      : undefined;
+
+    expect(warnings).toContain('image_extraction_timeout:page=1:image=img1');
+  });
+
   it('should successfully read specific pages using string range', async () => {
     const args = {
       sources: [{ path: 'test.pdf', pages: '1,3-3' }],
@@ -350,6 +405,8 @@ describe('handleReadPdfFunc Integration Tests', () => {
 
   it('should successfully read metadata only for a URL', async () => {
     const testUrl = 'http://example.com/test.pdf';
+    const pdfBytes = new Uint8Array([0x25, 0x50]);
+    mockFetch.mockResolvedValue(new Response(pdfBytes, { status: 200 }));
     const args = {
       sources: [{ url: testUrl }],
       include_full_text: false,
@@ -370,11 +427,12 @@ describe('handleReadPdfFunc Integration Tests', () => {
       ],
     };
     expect(mockReadFile).not.toHaveBeenCalled();
-    expect(mockGetDocument).toHaveBeenCalledWith({
-      url: testUrl,
+    const callArgs = mockGetDocument.mock.calls.at(-1)?.[0] as { data?: Uint8Array };
+    expect(callArgs).toMatchObject({
       cMapUrl: expect.stringContaining('cmaps'),
       cMapPacked: true,
     });
+    expect(callArgs.data).toEqual(pdfBytes);
     expect(mockGetMetadata).toHaveBeenCalled();
     expect(mockGetPage).not.toHaveBeenCalled();
     // Add check for content existence and access safely
@@ -391,6 +449,13 @@ describe('handleReadPdfFunc Integration Tests', () => {
 
   it('should handle multiple sources with different options', async () => {
     const urlSource = 'http://example.com/another.pdf';
+    const urlPdfBytes = new Uint8Array([0x25, 0x50, 0x44]);
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === urlSource) {
+        return new Response(urlPdfBytes, { status: 200 });
+      }
+      return new Response(new Uint8Array(), { status: 404 });
+    });
     const args = {
       sources: [{ path: 'local.pdf', pages: [1] }, { url: urlSource }],
       include_full_text: true,
@@ -433,21 +498,18 @@ describe('handleReadPdfFunc Integration Tests', () => {
     // Reset getDocument mock before setting implementation
     mockGetDocument.mockReset();
     // Mock getDocument based on input source
-    mockGetDocument.mockImplementation(
-      (source: { data?: Uint8Array; url?: string; cMapUrl?: string; cMapPacked?: boolean }) => {
-        // Check if source has the matching url property
-        if (source.url === urlSource) {
-          return secondLoadingTaskAPI;
-        }
-        // Default mock for path-based source (local.pdf)
-        const defaultMockDocumentAPI = {
-          numPages: 3,
-          getMetadata: mockGetMetadata, // Use original metadata mock
-          getPage: mockGetPage, // Use original page mock
-        };
-        return { promise: Promise.resolve(defaultMockDocumentAPI) };
+    mockGetDocument.mockImplementation((source: { data?: Uint8Array }) => {
+      if (source.data && Buffer.from(source.data).equals(Buffer.from(urlPdfBytes))) {
+        return secondLoadingTaskAPI;
       }
-    );
+      // Default mock for path-based source (local.pdf)
+      const defaultMockDocumentAPI = {
+        numPages: 3,
+        getMetadata: mockGetMetadata, // Use original metadata mock
+        getPage: mockGetPage, // Use original page mock
+      };
+      return { promise: Promise.resolve(defaultMockDocumentAPI) };
+    });
 
     const result = await handler(args);
     const expectedData = {
@@ -486,8 +548,11 @@ describe('handleReadPdfFunc Integration Tests', () => {
       cMapUrl: expect.stringContaining('cmaps'),
       cMapPacked: true,
     });
-    expect(mockGetDocument).toHaveBeenCalledWith({
-      url: urlSource,
+    const urlCallArgs = mockGetDocument.mock.calls.find((call) => {
+      const data = call[0]?.data as Uint8Array | undefined;
+      return data ? Buffer.from(data).equals(Buffer.from(urlPdfBytes)) : false;
+    })?.[0];
+    expect(urlCallArgs).toMatchObject({
       cMapUrl: expect.stringContaining('cmaps'),
       cMapPacked: true,
     });
@@ -666,6 +731,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
               { page: 2, text: 'Error processing page: Failed to get page 2' },
               { page: 3, text: 'Mock page text 3' },
             ],
+            warnings: ['image_extraction_page_failed:page=2'],
           },
         },
       ],
@@ -688,26 +754,23 @@ describe('handleReadPdfFunc Integration Tests', () => {
     const testUrl = 'http://example.com/bad-url.pdf';
     const loadError = new Error('Mock URL PDF loading failed');
     const failingLoadingTask = { promise: Promise.reject(loadError) };
+    mockFetch.mockResolvedValue(new Response(new Uint8Array([0x25, 0x50]), { status: 200 }));
     // Ensure getDocument is mocked specifically for this URL
     mockGetDocument.mockReset();
-    mockGetDocument.mockImplementation((source: unknown) => {
-      if (
-        typeof source === 'object' &&
-        source !== null &&
-        Object.hasOwn(source, 'url') &&
-        typeof (source as { url?: unknown }).url === 'string' &&
-        (source as { url: string }).url === testUrl
-      ) {
-        return failingLoadingTask;
-      }
-      const mockDocumentAPI = { numPages: 1, getMetadata: vi.fn(), getPage: vi.fn() };
-      return { promise: Promise.resolve(mockDocumentAPI) };
-    });
+    mockGetDocument.mockImplementation(() => failingLoadingTask);
 
     const args = { sources: [{ url: testUrl }] };
     // When all sources fail, handler now throws toolError
-    await expect(handler(args)).rejects.toThrow(PdfError);
-    await expect(handler(args)).rejects.toThrow('Mock URL PDF loading failed');
+    let caughtError: Error | null = null;
+    try {
+      await handler(args);
+    } catch (error) {
+      caughtError = error as Error;
+    }
+
+    expect(caughtError).toBeInstanceOf(PdfError);
+    expect(caughtError?.message).toContain('Failed to load PDF document from');
+    expect(caughtError?.message).toContain('Mock URL PDF loading failed');
   });
 
   it('should not include page count when include_page_count is false', async () => {

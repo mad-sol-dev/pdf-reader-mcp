@@ -19,8 +19,8 @@ const summarizePageStats = (
   pageContents: Array<Awaited<ReturnType<typeof extractPageContent>>>,
   includeImages: boolean
 ): PdfPageStats['page_stats'] => {
-  return pageContents.map((items, idx) => {
-    const textLength = items.reduce((total, item) => {
+  return pageContents.map((result, idx) => {
+    const textLength = result.items.reduce((total, item) => {
       if (item.type === 'text' && item.textContent) {
         return total + item.textContent.length;
       }
@@ -28,7 +28,7 @@ const summarizePageStats = (
     }, 0);
 
     const imageCount = includeImages
-      ? items.filter((item) => item.type === 'image' && item.imageData !== undefined).length
+      ? result.items.filter((item) => item.type === 'image' && item.imageData !== undefined).length
       : 0;
 
     return {

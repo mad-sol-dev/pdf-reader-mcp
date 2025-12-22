@@ -61,14 +61,18 @@ const fetchImage = async (
       throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
     }
 
-    const pageImages = await extractImages(pdfDocument, [page]);
+    const { images: pageImages, warnings: imageWarnings } = await extractImages(pdfDocument, [page]);
     const targetImage = pageImages.find((img) => img.index === index && img.page === page);
 
     if (!targetImage) {
       throw new Error(`Image with index ${index} not found on page ${page}.`);
     }
 
-    const warnings = [...(rangeWarnings ?? []), ...buildWarnings(invalidPages, totalPages)];
+    const warnings = [
+      ...(rangeWarnings ?? []),
+      ...buildWarnings(invalidPages, totalPages),
+      ...imageWarnings,
+    ];
     return { metadata: buildImageMetadata(targetImage, warnings), imageData: targetImage.data };
   });
 };

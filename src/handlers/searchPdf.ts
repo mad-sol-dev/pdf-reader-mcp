@@ -114,7 +114,7 @@ const collectPageHitData = async (
   sourceDescription: string,
   options: SearchOptions
 ) => {
-  const items = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
+  const { items } = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
   return buildNormalizedPageText(items, {
     preserveWhitespace: options.preserveWhitespace,
     trimLines: options.trimLines,

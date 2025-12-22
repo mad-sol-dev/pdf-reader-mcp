@@ -88,7 +88,7 @@ const performImageOcr = async (
     }
 
     // Layer 3: API call (slow, expensive)
-    const images = await extractImages(pdfDocument, [page]);
+    const { images } = await extractImages(pdfDocument, [page]);
     const target = images.find((img) => img.page === page && img.index === index);
 
     if (!target) {

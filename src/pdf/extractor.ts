@@ -102,17 +102,31 @@ const processImageData = (
  * Retrieve image data from PDF.js page objects
  * Tries multiple strategies: commonObjs -> sync objs.get -> async objs.get with timeout
  */
+type ImageDataResult = {
+  data: unknown;
+  warning?: string;
+};
+
+const IMAGE_WARNING_TIMEOUT = 'image_extraction_timeout';
+const IMAGE_WARNING_FAILED = 'image_extraction_failed';
+const IMAGE_WARNING_PAGE_FAILED = 'image_extraction_page_failed';
+
+const buildImageWarning = (code: string, pageNum: number, imageName?: string) => {
+  const base = `${code}:page=${pageNum}`;
+  return imageName ? `${base}:image=${imageName}` : base;
+};
+
 const retrieveImageData = async (
   page: pdfjsLib.PDFPageProxy,
   imageName: string,
   pageNum: number
-): Promise<unknown> => {
+): Promise<ImageDataResult> => {
   // Try to get from commonObjs first if it starts with 'g_'
   if (imageName.startsWith('g_')) {
     try {
       const imageData = page.commonObjs.get(imageName);
       if (imageData) {
-        return imageData;
+        return { data: imageData };
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -124,7 +138,7 @@ const retrieveImageData = async (
   try {
     const imageData = page.objs.get(imageName);
     if (imageData !== undefined) {
-      return imageData;
+      return { data: imageData };
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -132,7 +146,7 @@ const retrieveImageData = async (
   }
 
   // Fallback to async callback-based get with timeout
-  return new Promise<unknown>((resolve) => {
+  return new Promise<ImageDataResult>((resolve) => {
     let resolved = false;
     let timeoutId: NodeJS.Timeout | null = null;
 
@@ -149,7 +163,10 @@ const retrieveImageData = async (
         resolved = true;
         cleanup();
         logger.warn('Image extraction timeout', { imageName, pageNum });
-        resolve(null);
+        resolve({
+          data: null,
+          warning: buildImageWarning(IMAGE_WARNING_TIMEOUT, pageNum, imageName),
+        });
       }
     }, 10000); // 10 second timeout as a safety net
 
@@ -158,7 +175,7 @@ const retrieveImageData = async (
         if (!resolved) {
           resolved = true;
           cleanup();
-          resolve(imageData);
+          resolve({ data: imageData });
         }
       });
     } catch (error: unknown) {
@@ -168,7 +185,10 @@ const retrieveImageData = async (
         cleanup();
         const message = error instanceof Error ? error.message : String(error);
         logger.warn('Error in async image get', { imageName, error: message });
-        resolve(null);
+        resolve({
+          data: null,
+          warning: buildImageWarning(IMAGE_WARNING_FAILED, pageNum, imageName),
+        });
       }
     }
   });
@@ -278,8 +298,9 @@ export const extractPageTexts = async (
 const extractImagesFromPage = async (
   page: pdfjsLib.PDFPageProxy,
   pageNum: number
-): Promise<ExtractedImage[]> => {
+): Promise<{ images: ExtractedImage[]; warnings: string[] }> => {
   const images: ExtractedImage[] = [];
+  const warnings: string[] = [];
 
   /* c8 ignore next */
   try {
@@ -302,8 +323,11 @@ const extractImagesFromPage = async (
       }
 
       const imageName = argsArray[0] as string;
-      const imageData = await retrieveImageData(page, imageName, pageNum);
-      return processImageData(imageData, pageNum, arrayIndex);
+      const imageResult = await retrieveImageData(page, imageName, pageNum);
+      if (imageResult.warning) {
+        warnings.push(imageResult.warning);
+      }
+      return processImageData(imageResult.data, pageNum, arrayIndex);
     });
 
     const resolvedImages = await Promise.all(imagePromises);
@@ -311,9 +335,10 @@ const extractImagesFromPage = async (
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Error extracting images from page', { pageNum, error: message });
+    warnings.push(buildImageWarning(IMAGE_WARNING_PAGE_FAILED, pageNum));
   }
 
-  return images;
+  return { images, warnings };
 };
 
 /**
@@ -322,22 +347,25 @@ const extractImagesFromPage = async (
 export const extractImages = async (
   pdfDocument: pdfjsLib.PDFDocumentProxy,
   pagesToProcess: number[]
-): Promise<ExtractedImage[]> => {
+): Promise<{ images: ExtractedImage[]; warnings: string[] }> => {
   const allImages: ExtractedImage[] = [];
+  const warnings: string[] = [];
 
   // Process pages sequentially to avoid overwhelming PDF.js
   for (const pageNum of pagesToProcess) {
     try {
       const page = await pdfDocument.getPage(pageNum);
-      const pageImages = await extractImagesFromPage(page, pageNum);
-      allImages.push(...pageImages);
+      const { images, warnings: pageWarnings } = await extractImagesFromPage(page, pageNum);
+      allImages.push(...images);
+      warnings.push(...pageWarnings);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn('Error getting page for image extraction', { pageNum, error: message });
+      warnings.push(buildImageWarning(IMAGE_WARNING_PAGE_FAILED, pageNum));
     }
   }
 
-  return allImages;
+  return { images: allImages, warnings };
 };
 
 /**
@@ -361,8 +389,9 @@ export const extractPageContent = async (
   pageNum: number,
   includeImages: boolean,
   sourceDescription: string
-): Promise<PageContentItem[]> => {
+): Promise<{ items: PageContentItem[]; warnings: string[] }> => {
   const contentItems: PageContentItem[] = [];
+  const warnings: string[] = [];
 
   try {
     const page = await pdfDocument.getPage(pageNum);
@@ -439,8 +468,11 @@ export const extractPageContent = async (
         }
 
         // Use shared helper to retrieve and process image data
-        const imageData = await retrieveImageData(page, imageName, pageNum);
-        const extractedImage = processImageData(imageData, pageNum, arrayIndex);
+        const imageResult = await retrieveImageData(page, imageName, pageNum);
+        if (imageResult.warning) {
+          warnings.push(imageResult.warning);
+        }
+        const extractedImage = processImageData(imageResult.data, pageNum, arrayIndex);
 
         // Wrap in PageContentItem with yPosition
         if (extractedImage) {
@@ -464,16 +496,20 @@ export const extractPageContent = async (
       sourceDescription,
       error: message,
     });
+    warnings.push(buildImageWarning(IMAGE_WARNING_PAGE_FAILED, pageNum));
     // Return error message as text content
-    return [
-      {
-        type: 'text',
-        yPosition: 0,
-        textContent: `Error processing page: ${message}`,
-      },
-    ];
+    return {
+      items: [
+        {
+          type: 'text',
+          yPosition: 0,
+          textContent: `Error processing page: ${message}`,
+        },
+      ],
+      warnings,
+    };
   }
 
   // Sort by Y-position (descending = top to bottom in PDF coordinates)
-  return contentItems.sort((a, b) => b.yPosition - a.yPosition);
+  return { items: contentItems.sort((a, b) => b.yPosition - a.yPosition), warnings };
 };

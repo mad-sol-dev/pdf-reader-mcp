@@ -79,11 +79,15 @@ beforeEach(() => {
   mockLoadPdfDocument.mockResolvedValue(createPdfDocument(12));
   mockGetCachedPageText.mockReturnValue(undefined);
   mockSetCachedPageText.mockImplementation(() => {});
-  mockExtractImages.mockResolvedValue([{ page: 1, index: 0, width: 100, height: 100, format: 'png' }]);
+  mockExtractImages.mockResolvedValue({
+    images: [{ page: 1, index: 0, width: 100, height: 100, format: 'png' }],
+    warnings: [],
+  });
   mockExtractMetadataAndPageCount.mockResolvedValue({ page_count: 12 });
-  mockExtractPageContent.mockImplementation(async (_doc, pageNum: number) => [
-    { type: 'text', yPosition: 0, textContent: `Page ${pageNum}` },
-  ]);
+  mockExtractPageContent.mockImplementation(async (_doc, pageNum: number) => ({
+    items: [{ type: 'text', yPosition: 0, textContent: `Page ${pageNum}` }],
+    warnings: [],
+  }));
 });
 
 describe('PDF handlers page guards', () => {

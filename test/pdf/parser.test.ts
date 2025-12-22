@@ -150,12 +150,9 @@ describe('parser', () => {
     });
 
     it('should sample pages and provide a guard warning when full document access is not allowed', () => {
-      const result = determinePagesToProcess(
-        { pages: undefined, warnings: [] },
-        20,
-        true,
-        { allowFullDocument: false }
-      );
+      const result = determinePagesToProcess({ pages: undefined, warnings: [] }, 20, true, {
+        allowFullDocument: false,
+      });
 
       expect(result.pagesToProcess).toEqual(Array.from({ length: DEFAULT_SAMPLE_PAGE_LIMIT }, (_, idx) => idx + 1));
       expect(result.sampledFromFullDocument).toBe(true);

@@ -10,6 +10,9 @@
 - ✅ JSON cache files stored alongside PDFs (`{basename}_ocr.json`)
 - ✅ Fingerprint validation to detect PDF changes
 - ✅ Supports both page and image OCR caching
+- ✅ **Implemented insert_markers feature** for content type detection
+- ✅ Inline markers: `[IMAGE n: WxHpx, format]` and `[TABLE DETECTED]`
+- ✅ Helps clients identify pages needing OCR in large documents
 
 ## 🆕 Update Summary (2025-12-21)
 - ✅ Verified against current Mistral API documentation
@@ -49,6 +52,11 @@
 - Mock provider for testing
 - Vex schema validation for provider config
 - Cache management tools (`pdf_cache_stats`, `pdf_cache_clear`)
+- **Content markers in text extraction** (v1.4.0):
+  - `insert_markers` parameter in `pdf_read_pages`
+  - Inline markers: `[IMAGE n: WxHpx, format]`, `[TABLE DETECTED: n cols × m rows]`
+  - Helps identify pages with complex content needing OCR
+  - Code: `src/pdf/extractor.ts`, `src/pdf/text.ts`, `src/handlers/readPages.ts`
 
 ### 💾 Disk Cache Implementation
 
@@ -218,16 +226,6 @@ chat_response = client.chat.complete(
 ## Backlog
 
 ### High Priority
-
-- [ ] **Add content markers to text extraction** 🆕
-  - Insert `[IMAGE n]` and `[TABLE DETECTED]` markers in extracted text
-  - Helps clients decide when OCR is needed (scanned pages, complex layouts)
-  - Use case: 800-page PDF → OCR only pages with markers
-  - **Implementation options:**
-    - Option A: `insert_markers` parameter in `pdf_read_pages`
-    - Option B: Separate `content_map` structure (non-invasive)
-  - **Code locations:** `src/pdf/extractor.ts`, `src/pdf/text.ts`, `src/handlers/readPages.ts`
-  - **Alternative:** Enhance `pdf_get_page_stats` with `has_suspected_tables` flag
 
 - [ ] **Build Mistral Vision wrapper service**
   - Simple Express.js/Node.js HTTP server
@@ -471,7 +469,9 @@ See `/home/martinm/programme/python_projects/mistral_ocr_processor/mistral_ocr_p
 - Lines 417-422: OCR API usage (document-level)
 - Lines 200-206: Data URI construction for images
 
-## Feature Request: Content Markers in Text Extraction
+## ✅ Implemented Feature: Content Markers in Text Extraction
+
+**Status:** ✅ Implemented in v1.4.0 (commits 6b1778e, ee633b4)
 
 ### Problem Statement
 
@@ -491,9 +491,9 @@ See `/home/martinm/programme/python_projects/mistral_ocr_processor/mistral_ocr_p
 
 **Impact:** For 800-page documents, client can't efficiently decide which pages need OCR without additional logic.
 
-### Proposed Solution
+### ✅ Implemented Solution
 
-#### Option A: Insert Markers (Inline approach)
+#### Option A: Insert Markers (Inline approach) - **IMPLEMENTED**
 
 ```json
 {
@@ -521,7 +521,7 @@ See `/home/martinm/programme/python_projects/mistral_ocr_processor/mistral_ocr_p
 - Modifies text output (breaking change if not opt-in)
 - Marker format needs to be well-defined
 
-#### Option B: Content Map (Metadata approach)
+#### Option B: Content Map (Metadata approach) - **NOT IMPLEMENTED**
 
 ```json
 {

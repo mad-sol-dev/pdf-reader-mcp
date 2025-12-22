@@ -12,6 +12,20 @@
   - Enables selective OCR processing (e.g., OCR only 50 of 800 pages with markers)
   - Non-breaking change: defaults to `false` to preserve existing behavior
 
+- **OCR:** add persistent disk cache for OCR results
+  - 3-layer cache architecture: in-memory → disk → API
+  - Stores OCR results as `{pdf_basename}_ocr.json` alongside PDFs
+  - Survives MCP server restarts and reduces expensive API calls
+  - Fingerprint validation automatically invalidates cache on PDF changes
+  - Supports both page OCR (`pdf_ocr_page`) and image OCR (`pdf_ocr_image`)
+  - Only works for file-based PDFs (not URLs)
+
+### 🐛 Bug Fixes
+
+- **pdf_read_pages:** fix image extraction when `insert_markers=true` but `include_image_indexes=false`
+  - Images were not being extracted for marker insertion
+  - Now extracts images when EITHER parameter is enabled
+
 ## 2.1.0 (2025-12-17)
 
 ### ✨ Features

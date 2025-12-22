@@ -3,6 +3,7 @@ import { extractImages } from '../pdf/extractor.js';
 import { ocrImageArgsSchema } from '../schemas/ocr.js';
 import type { OcrResult } from '../types/pdf.js';
 import { buildOcrProviderKey, getCachedOcrText, setCachedOcrText } from '../utils/cache.js';
+import { getCachedOcrImage, setCachedOcrImage } from '../utils/diskCache.js';
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import type { OcrProviderOptions } from '../utils/ocr.js';
@@ -48,6 +49,8 @@ const performImageOcr = async (
     const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
     const providerKey = buildOcrProviderKey(provider);
     const cacheKey = `image-${page}-${index}#provider-${providerKey}`;
+
+    // Layer 1: In-memory cache (fast)
     const cached = useCache ? getCachedOcrText(fingerprint, cacheKey) : undefined;
 
     if (cached) {
@@ -61,6 +64,30 @@ const performImageOcr = async (
       );
     }
 
+    // Layer 2: Disk cache (persistent) - only for file-based PDFs
+    if (useCache && source.path) {
+      const diskCached = getCachedOcrImage(source.path, fingerprint, page, index, providerKey);
+      if (diskCached) {
+        // Load into memory cache for next time
+        setCachedOcrText(fingerprint, cacheKey, {
+          text: diskCached.text,
+          provider: provider?.name ?? 'unknown',
+        });
+
+        logger.debug('Loaded OCR result from disk cache', { page, index, path: source.path });
+
+        return buildCachedResult(
+          sourceDescription,
+          fingerprint,
+          page,
+          index,
+          provider?.name,
+          diskCached.text
+        );
+      }
+    }
+
+    // Layer 3: API call (slow, expensive)
     const images = await extractImages(pdfDocument, [page]);
     const target = images.find((img) => img.page === page && img.index === index);
 
@@ -69,7 +96,26 @@ const performImageOcr = async (
     }
 
     const ocr = await performOcr(target.data, provider);
+
+    // Save to both cache layers
     setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
+
+    if (source.path) {
+      setCachedOcrImage(
+        source.path,
+        fingerprint,
+        page,
+        index,
+        providerKey,
+        provider?.name ?? 'unknown',
+        {
+          text: ocr.text,
+          provider_hash: providerKey,
+          cached_at: new Date().toISOString(),
+        }
+      );
+      logger.debug('Saved OCR result to disk cache', { page, index, path: source.path });
+    }
 
     return {
       source: sourceDescription,

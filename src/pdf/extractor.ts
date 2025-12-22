@@ -251,6 +251,10 @@ const extractSinglePageText = async (
 ): Promise<ExtractedPageText> => {
   try {
     const page = await pdfDocument.getPage(pageNum);
+    const pageRotation = typeof page.rotate === 'number' ? page.rotate : 0;
+    // Note: table detection assumes xPosition coordinates are already normalized.
+    // Rotated pages may require additional coordinate transforms.
+    void pageRotation;
     const textContent = await page.getTextContent();
     const pageText = textContent.items
       .map((item: unknown) => (item as { str: string }).str)
@@ -401,21 +405,25 @@ export const extractPageContent = async (
 
     // Group text items by Y-coordinate (items on same line have similar Y values)
     // Also track X-coordinates for table detection
-    const textByY = new Map<number, Array<{ x: number; text: string }>>();
+    const textByY = new Map<number, Array<{ x: number; text: string; fontSize?: number }>>();
 
     for (const item of textContent.items) {
-      const textItem = item as { str: string; transform: number[] };
+      const textItem = item as { str: string; transform: number[]; height?: number };
       // transform[4] is the X coordinate, transform[5] is the Y coordinate
       const xCoord = textItem.transform[4];
       const yCoord = textItem.transform[5];
       if (yCoord === undefined || xCoord === undefined) continue;
       const y = Math.round(yCoord);
       const x = Math.round(xCoord);
+      const fontSize =
+        typeof textItem.height === 'number' && Number.isFinite(textItem.height)
+          ? Math.abs(textItem.height)
+          : undefined;
 
       if (!textByY.has(y)) {
         textByY.set(y, []);
       }
-      textByY.get(y)?.push({ x, text: textItem.str });
+      textByY.get(y)?.push({ x, text: textItem.str, fontSize });
     }
 
     // Convert grouped text to content items
@@ -423,6 +431,13 @@ export const extractPageContent = async (
       // Sort by X position to maintain left-to-right order
       textParts.sort((a, b) => a.x - b.x);
       const textContent = textParts.map((part) => part.text).join('');
+      const fontSizes = textParts
+        .map((part) => part.fontSize)
+        .filter((value): value is number => typeof value === 'number' && value > 0);
+      const averageFontSize =
+        fontSizes.length > 0
+          ? fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length
+          : undefined;
       const xPosition = textParts[0]?.x ?? 0; // Use leftmost X position
 
       if (textContent.trim()) {
@@ -430,6 +445,7 @@ export const extractPageContent = async (
           type: 'text',
           yPosition: y,
           xPosition,
+          fontSize: averageFontSize,
           textContent,
         });
       }

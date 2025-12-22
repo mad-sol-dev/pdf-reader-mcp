@@ -18,11 +18,14 @@ const parseAllowedRoots = (value: string | undefined): string[] | undefined => {
     .filter(Boolean);
 };
 
-export const getPathGuardConfig = (): ResolvePathOptions => ({
-  baseDir: process.env[ENV_BASE_DIR] ?? PROJECT_ROOT,
-  allowedRoots: parseAllowedRoots(process.env[ENV_ALLOWED_PATHS]),
-  allowUnsafeAbsolute: process.env[ENV_ALLOW_UNSAFE_ABSOLUTE] === 'true',
-});
+export const getPathGuardConfig = (): ResolvePathOptions => {
+  const allowedRoots = parseAllowedRoots(process.env[ENV_ALLOWED_PATHS]);
+  return {
+    baseDir: process.env[ENV_BASE_DIR] ?? PROJECT_ROOT,
+    ...(allowedRoots !== undefined && { allowedRoots }),
+    allowUnsafeAbsolute: process.env[ENV_ALLOW_UNSAFE_ABSOLUTE] === 'true',
+  };
+};
 
 type ResolvePathOptions = {
   allowedRoots?: string[];

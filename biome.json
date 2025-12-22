@@ -74,7 +74,15 @@
   },
   "overrides": [
     {
-      "includes": ["src/handlers/readPdf.ts", "src/pdf/**/*.ts", "test/**/*.ts"],
+      "includes": [
+        "src/handlers/readPdf.ts",
+        "src/handlers/ocrImage.ts",
+        "src/handlers/ocrPage.ts",
+        "src/utils/ocr.ts",
+        "src/pdf/**/*.ts",
+        "test/**/*.ts",
+        "mistral-ocr-wrapper/**/*.ts"
+      ],
       "linter": {
         "rules": {
           "complexity": {

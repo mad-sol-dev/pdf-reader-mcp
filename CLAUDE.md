@@ -186,19 +186,7 @@ Run single test file:
 bunx vitest run test/handlers/readPdf.test.ts
 ```
 
-**⚠️ Known Issue: Pre-Commit Hook Conflict**
-
-The project uses Vitest for tests, but the `@sylphx/doctor` pre-commit hook expects `bun test`. This causes hook failures because:
-- Tests use Vitest-specific features (`vi.hoisted()`, `vi.mock()`)
-- Bun's test runner doesn't support these Vitest APIs
-- All tests pass with Vitest (128 tests), but fail with `bun test`
-
-**Workaround for commits:**
-```bash
-git commit --no-verify -m "your message"
-```
-
-**TODO:** Either migrate tests to Bun test runner OR configure doctor hook to accept Vitest.
+Pre-commit runs `bun run test` (Vitest), matching the test suite's APIs.
 
 ### Guardrail System
 

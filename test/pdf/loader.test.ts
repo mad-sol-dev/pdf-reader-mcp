@@ -232,11 +232,11 @@ describe('loader', () => {
       );
 
       await expect(
-        loadPdfDocument(
-          { url: 'https://example.com/large.pdf' },
-          'https://example.com/large.pdf',
-          { maxBytes: 10, requestTimeoutMs: 500, readTimeoutMs: 500 }
-        )
+        loadPdfDocument({ url: 'https://example.com/large.pdf' }, 'https://example.com/large.pdf', {
+          maxBytes: 10,
+          requestTimeoutMs: 500,
+          readTimeoutMs: 500,
+        })
       ).rejects.toThrow('PDF download exceeds maximum size of 10 bytes');
 
       expect(cancelSpy).toHaveBeenCalled();
@@ -262,15 +262,13 @@ describe('loader', () => {
         })
       );
 
-      const promise = loadPdfDocument(
-        { url: 'https://example.com/slow.pdf' },
-        'https://example.com/slow.pdf',
-        { maxBytes: 10_000, requestTimeoutMs: 500, readTimeoutMs: 50 }
-      );
+      const promise = loadPdfDocument({ url: 'https://example.com/slow.pdf' }, 'https://example.com/slow.pdf', {
+        maxBytes: 10_000,
+        requestTimeoutMs: 500,
+        readTimeoutMs: 50,
+      });
 
-      const assertion = expect(promise).rejects.toThrow(
-        'Timed out reading PDF from https://example.com/slow.pdf'
-      );
+      const assertion = expect(promise).rejects.toThrow('Timed out reading PDF from https://example.com/slow.pdf');
 
       await vi.advanceTimersByTimeAsync(60);
 

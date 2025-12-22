@@ -13,7 +13,7 @@ import { pdfSourceSchema } from './pdfSource.js';
 
 export const ocrProviderSchema = object({
   name: optional(str(description('Friendly provider identifier for logs.'))),
-  type: optional(str(description('Provider type: http, mistral, or mock.'))),
+  type: optional(str(description('Provider type: http, mistral, mistral-ocr, or mock.'))),
   endpoint: optional(str(description('OCR HTTP endpoint.'))),
   api_key: optional(str(description('Bearer token for the OCR provider.'))),
   model: optional(str(description('Model name or identifier.'))),
@@ -28,6 +28,9 @@ export const ocrPageArgsSchema = object({
   scale: optional(num(gte(0.1), description('Rendering scale applied before OCR.'))),
   provider: optional(ocrProviderSchema),
   cache: optional(bool(description('Use cached OCR result when available.'))),
+  smart_ocr: optional(
+    bool(description('Enable smart OCR decision step to skip OCR when likely unnecessary.'))
+  ),
 });
 
 export const ocrImageArgsSchema = object({

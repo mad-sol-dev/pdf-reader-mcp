@@ -268,7 +268,7 @@ describe('handleReadPdfFunc Integration Tests', () => {
             argsArray: [['img1']],
           }),
           objs: {
-            get: vi.fn((name: string, callback?: (data: unknown) => void) => {
+            get: vi.fn((_name: string, callback?: (data: unknown) => void) => {
               if (typeof callback === 'function') {
                 return;
               }

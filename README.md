@@ -396,12 +396,39 @@ Extracts ordered text per page with optional image indexes (no binary data) plus
 |-----------|------|-------------|---------|
 | `sources` | Array | List of PDF sources to process | Required |
 | `include_image_indexes` | boolean | Return image indexes for each page (base64 omitted) | `false` |
+| `insert_markers` | boolean | **NEW:** Insert `[IMAGE n]` and `[TABLE DETECTED]` markers inline with text | `false` |
 | `max_chars_per_page` | number | Truncate each page after N characters | unset |
 | `preserve_whitespace` | boolean | Keep original whitespace (otherwise collapsed) | `false` |
 | `trim_lines` | boolean | Trim leading/trailing whitespace per line | `true` |
 | `allow_full_document` | boolean | Allow full-document reads when `pages` is not provided; otherwise a guard samples only the first pages with a warning | `false` |
 
 **Output:** `page_index` (0-based), `page_number`, optional `page_label`, ordered `lines`, combined `text`, `image_indexes`, and `truncated_pages` metadata when limits apply.
+
+**Example with content markers:**
+
+```json
+{
+  "sources": [{ "path": "./document.pdf", "pages": "5" }],
+  "insert_markers": true
+}
+```
+
+**Response with markers:**
+```json
+{
+  "results": [{
+    "data": {
+      "pages": [{
+        "page_number": 5,
+        "text": "System Overview\n\n[IMAGE 0: 1200x800px, png]\n\nFigure 1 shows...\n\n[TABLE DETECTED: 3 cols × 5 rows]\nName | Age | City\nAlice | 30 | NYC\n...",
+        "lines": ["System Overview", "", "[IMAGE 0: 1200x800px, png]", "", "Figure 1 shows...", "", "[TABLE DETECTED: 3 cols × 5 rows]", "Name | Age | City", "..."]
+      }]
+    }
+  }]
+}
+```
+
+**Use case:** Identify pages with complex visual content (images, tables, diagrams) that may benefit from OCR processing. For 800-page documents, selectively OCR only pages with `[IMAGE]` or `[TABLE DETECTED]` markers to reduce processing costs by 90%+.
 
 ### `pdf_search` — page-aware search
 

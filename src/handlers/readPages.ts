@@ -19,6 +19,7 @@ const logger = createLogger('ReadPages');
 
 interface PageReadOptions {
   includeImageIndexes: boolean;
+  insertMarkers: boolean;
   maxCharsPerPage?: number;
   preserveWhitespace: boolean;
   trimLines: boolean;
@@ -47,6 +48,7 @@ const processPage = async (
   const normalized = buildNormalizedPageText(items, {
     preserveWhitespace: options.preserveWhitespace,
     trimLines: options.trimLines,
+    insertMarkers: options.insertMarkers,
     ...(options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}),
   });
 
@@ -209,12 +211,15 @@ const processSourcePages = async (
 };
 
 export const pdfReadPages = tool()
-  .description('Reads structured text for specific PDF pages with optional image indexes.')
+  .description(
+    'Reads structured text for specific PDF pages with optional image indexes and content markers.'
+  )
   .input(readPagesArgsSchema)
   .handler(async ({ input }) => {
     const {
       sources,
       include_image_indexes,
+      insert_markers,
       max_chars_per_page,
       preserve_whitespace,
       trim_lines,
@@ -223,6 +228,7 @@ export const pdfReadPages = tool()
 
     const options: PageReadOptions = {
       includeImageIndexes: include_image_indexes ?? false,
+      insertMarkers: insert_markers ?? false,
       preserveWhitespace: preserve_whitespace ?? false,
       trimLines: trim_lines ?? true,
       ...(max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}),

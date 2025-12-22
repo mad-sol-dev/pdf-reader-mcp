@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### ✨ Features
+
+- **pdf_read_pages:** add `insert_markers` parameter to insert content type markers inline with text
+  - Inserts `[IMAGE n: WxHpx, format]` markers at image positions when enabled
+  - Inserts `[TABLE DETECTED: n cols × m rows]` markers for detected table structures
+  - Table detection uses X/Y-coordinate alignment heuristics (requires ≥3 columns and ≥3 rows)
+  - Helps identify pages with complex visual content that may need OCR
+  - Enables selective OCR processing (e.g., OCR only 50 of 800 pages with markers)
+  - Non-breaking change: defaults to `false` to preserve existing behavior
+
 ## 2.1.0 (2025-12-17)
 
 ### ✨ Features

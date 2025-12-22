@@ -17,6 +17,14 @@ export const readPagesArgsSchema = object({
   include_image_indexes: optional(
     bool(description('Include image indexes for each page (no image data is returned).'))
   ),
+  insert_markers: optional(
+    bool(
+      description(
+        'Insert [IMAGE] and [TABLE] markers inline with text at their approximate positions. ' +
+          'Helps identify pages with complex content that may need OCR.'
+      )
+    )
+  ),
   max_chars_per_page: optional(
     num(int, gte(1), description('Maximum characters to return per page before truncating.'))
   ),

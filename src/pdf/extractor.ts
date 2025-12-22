@@ -367,32 +367,40 @@ export const extractPageContent = async (
   try {
     const page = await pdfDocument.getPage(pageNum);
 
-    // Extract text content with Y-coordinates
+    // Extract text content with X/Y-coordinates
     const textContent = await page.getTextContent();
 
     // Group text items by Y-coordinate (items on same line have similar Y values)
-    const textByY = new Map<number, string[]>();
+    // Also track X-coordinates for table detection
+    const textByY = new Map<number, Array<{ x: number; text: string }>>();
 
     for (const item of textContent.items) {
       const textItem = item as { str: string; transform: number[] };
-      // transform[5] is the Y coordinate
+      // transform[4] is the X coordinate, transform[5] is the Y coordinate
+      const xCoord = textItem.transform[4];
       const yCoord = textItem.transform[5];
-      if (yCoord === undefined) continue;
+      if (yCoord === undefined || xCoord === undefined) continue;
       const y = Math.round(yCoord);
+      const x = Math.round(xCoord);
 
       if (!textByY.has(y)) {
         textByY.set(y, []);
       }
-      textByY.get(y)?.push(textItem.str);
+      textByY.get(y)?.push({ x, text: textItem.str });
     }
 
     // Convert grouped text to content items
     for (const [y, textParts] of textByY.entries()) {
-      const textContent = textParts.join('');
+      // Sort by X position to maintain left-to-right order
+      textParts.sort((a, b) => a.x - b.x);
+      const textContent = textParts.map((part) => part.text).join('');
+      const xPosition = textParts[0]?.x ?? 0; // Use leftmost X position
+
       if (textContent.trim()) {
         contentItems.push({
           type: 'text',
           yPosition: y,
+          xPosition,
           textContent,
         });
       }

@@ -28,6 +28,7 @@ export interface ExtractedImage {
 export interface PageContentItem {
   type: 'text' | 'image';
   yPosition: number;
+  xPosition?: number; // X-coordinate for table detection (text items only)
   textContent?: string;
   imageData?: ExtractedImage;
 }
@@ -216,4 +217,38 @@ export interface ReadPdfOptions {
   include_metadata: boolean;
   include_page_count: boolean;
   include_images: boolean;
+}
+
+// Content markers - unified content item types
+export interface ContentItem {
+  type: 'text' | 'image' | 'table';
+  y: number; // Y-coordinate for ordering
+}
+
+export interface TextContentItem extends ContentItem {
+  type: 'text';
+  content: string;
+  x: number;
+}
+
+export interface ImageContentItem extends ContentItem {
+  type: 'image';
+  index: number;
+  width: number;
+  height: number;
+  format?: string;
+}
+
+export interface TableContentItem extends ContentItem {
+  type: 'table';
+  cols: number;
+  rows: number;
+  content: string; // The table text itself
+}
+
+export interface TextExtractionOptions {
+  preserveWhitespace?: boolean;
+  trimLines?: boolean;
+  insertMarkers?: boolean;
+  includeImages?: boolean;
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Filter out DOMMatrix polyfill warnings from stdout (breaks MCP JSON)
-// These warnings come from @napi-rs/canvas native module
+// Filter out all warnings/console output from stdout (breaks MCP JSON)
+// MCP protocol requires clean JSON-RPC on stdout, everything else goes to stderr
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 process.stdout.write = ((
   chunk: string | Uint8Array,
@@ -9,8 +9,18 @@ process.stdout.write = ((
   callback?: (error?: Error) => void
 ) => {
   const str = chunk.toString();
-  // Skip DOMMatrix warnings - redirect to stderr instead
-  if (str.includes('Cannot polyfill') || str.includes('DOMMatrix')) {
+
+  // Redirect any warnings or debug output to stderr
+  // Common patterns: "Warning:", "Cannot polyfill", "DOMMatrix", etc.
+  const shouldRedirectToStderr =
+    str.includes('Warning:') ||
+    str.includes('Cannot polyfill') ||
+    str.includes('DOMMatrix') ||
+    str.includes('Path2D') ||
+    str.trim().startsWith('Warning') ||
+    str.trim().startsWith('(node:'); // Node.js warnings
+
+  if (shouldRedirectToStderr) {
     if (typeof encodingOrCallback === 'function') {
       process.stderr.write(chunk, encodingOrCallback);
     } else {

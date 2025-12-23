@@ -3394,7 +3394,8 @@ var pdfSearch = tool12().description(`Search for specific text patterns across P
 var originalStdoutWrite = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encodingOrCallback, callback) => {
   const str5 = chunk.toString();
-  if (str5.includes("Cannot polyfill") || str5.includes("DOMMatrix")) {
+  const shouldRedirectToStderr = str5.includes("Warning:") || str5.includes("Cannot polyfill") || str5.includes("DOMMatrix") || str5.includes("Path2D") || str5.trim().startsWith("Warning") || str5.trim().startsWith("(node:");
+  if (shouldRedirectToStderr) {
     if (typeof encodingOrCallback === "function") {
       process.stderr.write(chunk, encodingOrCallback);
     } else {

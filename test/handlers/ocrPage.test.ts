@@ -5,6 +5,7 @@ import { clearCache } from '../../src/utils/cache.js';
 const mockRenderPageToPng = vi.fn();
 const mockPerformOcr = vi.fn();
 const mockWithPdfDocument = vi.fn();
+const mockGetConfiguredProvider = vi.fn();
 
 vi.mock('../../src/pdf/render.js', () => ({
   renderPageToPng: mockRenderPageToPng,
@@ -26,6 +27,7 @@ vi.mock('../../src/utils/ocr.js', async () => {
   return {
     ...actual,
     performOcr: mockPerformOcr,
+    getConfiguredProvider: mockGetConfiguredProvider,
   };
 });
 
@@ -76,6 +78,9 @@ beforeEach(() => {
   mockRenderPageToPng.mockReset();
   mockPerformOcr.mockReset();
   mockWithPdfDocument.mockReset();
+  mockGetConfiguredProvider.mockReset();
+  // Default: return mock provider for tests
+  mockGetConfiguredProvider.mockReturnValue({ type: 'mock', name: 'mock-test' });
   fingerprintCounter += 1;
 });
 
@@ -121,7 +126,6 @@ describe('smart_ocr flag', () => {
       source: { path: 'test.pdf' },
       page: 1,
       smart_ocr: true,
-      provider: { type: 'mock' },
     });
     const payload = JSON.parse(result.content[0].text) as {
       data: { provider?: string; decision?: string; message?: string };
@@ -157,7 +161,6 @@ describe('smart_ocr flag', () => {
       page: 1,
       smart_ocr: false,
       cache: false,
-      provider: { type: 'mock' },
     });
     const payload = JSON.parse(result.content[0].text) as {
       data: { provider?: string; text?: string };

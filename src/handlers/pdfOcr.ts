@@ -15,7 +15,7 @@ import {
 import { getDocumentFingerprint } from '../utils/fingerprint.js';
 import { createLogger } from '../utils/logger.js';
 import type { OcrProviderOptions } from '../utils/ocr.js';
-import { getConfiguredProvider, performOcr, sanitizeProviderOptions } from '../utils/ocr.js';
+import { getConfiguredProvider, performOcr } from '../utils/ocr.js';
 import { withPdfDocument } from '../utils/pdfLifecycle.js';
 
 const logger = createLogger('PdfOcr');
@@ -500,17 +500,18 @@ export const pdfOcr = tool()
       'Use AFTER Stage 1 (pdf_read) and Stage 2 (pdf_extract_image) when:\n' +
       '- Images contain text that Vision cannot read clearly\n' +
       '- You need machine-readable text from scanned pages\n\n' +
-      'AUTO-FALLBACK: If no OCR provider is configured, returns base64 image for your Vision analysis instead of erroring.\n\n' +
+      'AUTO-FALLBACK: If no OCR provider is configured via MISTRAL_API_KEY environment variable, returns base64 image for your Vision analysis instead of erroring.\n\n' +
       'Two modes:\n' +
       '1. Page OCR: Omit "index" to OCR entire rendered page\n' +
       '2. Image OCR: Provide "index" to OCR specific image from page\n\n' +
+      'Configuration: Set MISTRAL_API_KEY environment variable to enable OCR.\n\n' +
       'Example:\n' +
       '  pdf_ocr({source: {path: "doc.pdf"}, page: 5})  // Full page\n' +
       '  pdf_ocr({source: {path: "doc.pdf"}, page: 5, index: 0})  // Specific image'
   )
   .input(pdfOcrArgsSchema)
   .handler(async ({ input }) => {
-    const { source, page, index, scale, provider, cache, smart_ocr } = input;
+    const { source, page, index, scale, cache, smart_ocr } = input;
     const sourceDescription = source.path ?? source.url ?? 'unknown source';
 
     const sourceArgs = {
@@ -519,10 +520,8 @@ export const pdfOcr = tool()
     };
 
     try {
-      // Get provider from input or environment
-      const configuredProvider = provider
-        ? sanitizeProviderOptions(provider)
-        : getConfiguredProvider();
+      // Get provider from environment configuration
+      const configuredProvider = getConfiguredProvider();
 
       const result = await withPdfDocument(sourceArgs, sourceDescription, async (pdfDocument) => {
         const totalPages = pdfDocument.numPages;

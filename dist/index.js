@@ -1667,28 +1667,15 @@ import {
   int as int3,
   num as num3,
   object as object9,
-  optional as optional7,
-  record,
-  str as str4
+  optional as optional7
 } from "@sylphx/vex";
-var ocrProviderSchema = object9({
-  name: optional7(str4(description8("Friendly provider identifier for logs."))),
-  type: optional7(str4(description8("Provider type: http, mistral, mistral-ocr, or mock."))),
-  endpoint: optional7(str4(description8("OCR HTTP endpoint."))),
-  api_key: optional7(str4(description8("Bearer token for the OCR provider."))),
-  model: optional7(str4(description8("Model name or identifier."))),
-  language: optional7(str4(description8("Preferred language for OCR."))),
-  timeout_ms: optional7(num3(gte3(1), description8("Timeout in milliseconds for OCR requests."))),
-  extras: optional7(record(str4(), str4(), description8("Additional provider-specific options. Mistral OCR supports: tableFormat (html|markdown), includeFullResponse (boolean), includeImageBase64 (boolean), extractHeader (boolean), extractFooter (boolean).")))
-});
 var pdfOcrArgsSchema = object9({
   source: pdfSourceSchema,
   page: num3(int3, gte3(1), description8("1-based page number.")),
   index: optional7(num3(int3, gte3(0), description8("0-based image index within the page. If provided, OCR will be performed on the specific image. If omitted, OCR will be performed on the entire rendered page."))),
   scale: optional7(num3(gte3(0.1), description8("Rendering scale applied before OCR (only for page OCR)."))),
   cache: optional7(bool4(description8("Use cached OCR result when available. Defaults to true."))),
-  smart_ocr: optional7(bool4(description8("Enable smart OCR decision step to skip OCR when likely unnecessary (only for page OCR)."))),
-  provider: optional7(ocrProviderSchema)
+  smart_ocr: optional7(bool4(description8("Enable smart OCR decision step to skip OCR when likely unnecessary (only for page OCR).")))
 });
 
 // src/utils/diskCache.ts
@@ -2132,30 +2119,6 @@ var handleMistralOcrDedicated = async (base64Image, provider) => {
     }
   }
 };
-var sanitizeProviderOptions = (provider) => {
-  if (!provider) {
-    return;
-  }
-  const sanitized = {};
-  if (typeof provider.name === "string")
-    sanitized.name = provider.name;
-  if (provider.type === "http" || provider.type === "mock" || provider.type === "mistral" || provider.type === "mistral-ocr") {
-    sanitized.type = provider.type;
-  }
-  if (typeof provider.endpoint === "string")
-    sanitized.endpoint = provider.endpoint;
-  if (typeof provider.api_key === "string")
-    sanitized.api_key = provider.api_key;
-  if (typeof provider.model === "string")
-    sanitized.model = provider.model;
-  if (typeof provider.language === "string")
-    sanitized.language = provider.language;
-  if (typeof provider.timeout_ms === "number")
-    sanitized.timeout_ms = provider.timeout_ms;
-  if (provider.extras)
-    sanitized.extras = provider.extras;
-  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
-};
 var performOcr = async (base64Image, provider) => {
   const resolvedProvider = provider ?? getDefaultProvider();
   if (!resolvedProvider || resolvedProvider.type === "mock") {
@@ -2460,23 +2423,25 @@ var pdfOcr = tool8().description(`STAGE 3: OCR for text in images
 ` + `- Images contain text that Vision cannot read clearly
 ` + `- You need machine-readable text from scanned pages
 
-` + `AUTO-FALLBACK: If no OCR provider is configured, returns base64 image for your Vision analysis instead of erroring.
+` + `AUTO-FALLBACK: If no OCR provider is configured via MISTRAL_API_KEY environment variable, returns base64 image for your Vision analysis instead of erroring.
 
 ` + `Two modes:
 ` + `1. Page OCR: Omit "index" to OCR entire rendered page
 ` + `2. Image OCR: Provide "index" to OCR specific image from page
 
+` + `Configuration: Set MISTRAL_API_KEY environment variable to enable OCR.
+
 ` + `Example:
 ` + `  pdf_ocr({source: {path: "doc.pdf"}, page: 5})  // Full page
 ` + '  pdf_ocr({source: {path: "doc.pdf"}, page: 5, index: 0})  // Specific image').input(pdfOcrArgsSchema).handler(async ({ input }) => {
-  const { source, page, index, scale, provider, cache, smart_ocr } = input;
+  const { source, page, index, scale, cache, smart_ocr } = input;
   const sourceDescription = source.path ?? source.url ?? "unknown source";
   const sourceArgs = {
     ...source.path ? { path: source.path } : {},
     ...source.url ? { url: source.url } : {}
   };
   try {
-    const configuredProvider = provider ? sanitizeProviderOptions(provider) : getConfiguredProvider();
+    const configuredProvider = getConfiguredProvider();
     const result = await withPdfDocument(sourceArgs, sourceDescription, async (pdfDocument) => {
       const totalPages = pdfDocument.numPages;
       if (page < 1 || page > totalPages) {
@@ -3150,11 +3115,11 @@ import {
   num as num6,
   object as object13,
   optional as optional11,
-  str as str5
+  str as str4
 } from "@sylphx/vex";
 var pdfSearchArgsSchema = object13({
   sources: array9(pdfSourceSchema),
-  query: str5(min2(1), description12("Plain text or regular expression to search for within pages.")),
+  query: str4(min2(1), description12("Plain text or regular expression to search for within pages.")),
   use_regex: optional11(bool7(description12("Treat the query as a regular expression."))),
   case_sensitive: optional11(bool7(description12("Enable case sensitive matching."))),
   context_chars: optional11(num6(int5, gte6(0), description12("Number of characters to include before/after each match."))),
@@ -3383,8 +3348,8 @@ var pdfSearch = tool12().description(`Search for specific text patterns across P
 // src/index.ts
 var originalStdoutWrite = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encodingOrCallback, callback) => {
-  const str6 = chunk.toString();
-  if (str6.includes("Cannot polyfill") || str6.includes("DOMMatrix")) {
+  const str5 = chunk.toString();
+  if (str5.includes("Cannot polyfill") || str5.includes("DOMMatrix")) {
     if (typeof encodingOrCallback === "function") {
       process.stderr.write(chunk, encodingOrCallback);
     } else {

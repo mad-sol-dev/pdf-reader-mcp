@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pdfGetPageStats } from '../../src/handlers/getPageStats.js';
 import { pdfListImages } from '../../src/handlers/listImages.js';
-import { pdfReadPages } from '../../src/handlers/readPages.js';
+import { pdfRead } from '../../src/handlers/pdfRead.js';
 import { readPdf } from '../../src/handlers/readPdf.js';
 import { pdfSearch } from '../../src/handlers/searchPdf.js';
 import { DEFAULT_SAMPLE_PAGE_LIMIT } from '../../src/pdf/parser.js';
@@ -92,7 +92,7 @@ beforeEach(() => {
 
 describe('PDF handlers page guards', () => {
   it('samples readPages requests without explicit pages and surfaces a warning', async () => {
-    const result = await pdfReadPages.handler({
+    const result = await pdfRead.handler({
       input: { sources: [{ path: 'doc.pdf' }] },
       ctx: {},
     });
@@ -141,7 +141,7 @@ describe('PDF handlers page guards', () => {
   });
 
   it('continues to honor explicit page selections', async () => {
-    const result = await pdfReadPages.handler({
+    const result = await pdfRead.handler({
       input: { sources: [{ path: 'doc.pdf', pages: [2, 4] }] },
       ctx: {},
     });

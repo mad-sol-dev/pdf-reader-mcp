@@ -2269,8 +2269,189 @@ var pdfOcrPage = tool8().description("Perform OCR on a rendered PDF page. Provid
   });
 });
 
-// src/handlers/readPages.ts
+// src/handlers/pdfInfo.ts
 import { text as text9, tool as tool9, toolError as toolError9 } from "@sylphx/mcp-server-sdk";
+import { OPS as OPS3 } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+// src/schemas/pdfInfo.ts
+import { array as array6, description as description8, object as object9, optional as optional7, str as str4 } from "@sylphx/vex";
+var pdfInfoArgsSchema = object9({
+  source: pdfSourceSchema,
+  include: optional7(array6(str4(), description8('Optional info to include: "toc" (table of contents), "stats" (page/image statistics). ' + "Omit for basic metadata only (pages, title, author, language).")))
+});
+
+// src/handlers/pdfInfo.ts
+var logger15 = createLogger("PdfInfo");
+var buildLoadArgs3 = (source) => ({
+  ...source.path ? { path: source.path } : {},
+  ...source.url ? { url: source.url } : {}
+});
+var getFingerprint2 = (pdfDocument) => pdfDocument.fingerprint ?? pdfDocument.fingerprints?.[0];
+var getTocInfo = async (pdfDocument, sourceDescription) => {
+  try {
+    const outline = await pdfDocument.getOutline();
+    if (!outline || outline.length === 0) {
+      return { has_toc: false };
+    }
+    const countEntries = (items) => {
+      let count = items.length;
+      for (const item of items) {
+        const typedItem = item;
+        if (typedItem.items && Array.isArray(typedItem.items)) {
+          count += countEntries(typedItem.items);
+        }
+      }
+      return count;
+    };
+    return {
+      has_toc: true,
+      toc_entries: countEntries(outline)
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger15.warn("Error checking TOC", { sourceDescription, error: message });
+    return { has_toc: false };
+  }
+};
+var countImagesOnPage2 = async (page) => {
+  const operatorList = await page.getOperatorList();
+  const fnArray = operatorList.fnArray ?? [];
+  let count = 0;
+  for (const op of fnArray) {
+    if (op === OPS3.paintImageXObject || op === OPS3.paintXObject) {
+      count += 1;
+    }
+  }
+  return count;
+};
+var countTotalImages = async (pdfDocument, pagesToCheck, sourceDescription) => {
+  let totalImages = 0;
+  for (let pageNum = 1;pageNum <= pagesToCheck; pageNum++) {
+    try {
+      const page = await pdfDocument.getPage(pageNum);
+      totalImages += await countImagesOnPage2(page);
+    } catch (pageError) {
+      const message = pageError instanceof Error ? pageError.message : String(pageError);
+      logger15.warn("Error checking images on page", {
+        sourceDescription,
+        page: pageNum,
+        error: message
+      });
+    }
+  }
+  return totalImages;
+};
+var buildImageStatsResult = (totalImages, pagesToCheck, numPages) => {
+  if (totalImages === 0) {
+    return { has_images: false };
+  }
+  const estimatedTotal = pagesToCheck < numPages ? Math.round(totalImages / pagesToCheck * numPages) : totalImages;
+  return {
+    has_images: true,
+    image_count: estimatedTotal
+  };
+};
+var getImageStats = async (pdfDocument, sourceDescription) => {
+  try {
+    const numPages = pdfDocument.numPages;
+    const pagesToCheck = Math.min(10, numPages);
+    const totalImages = await countTotalImages(pdfDocument, pagesToCheck, sourceDescription);
+    return buildImageStatsResult(totalImages, pagesToCheck, numPages);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger15.warn("Error counting images", { sourceDescription, error: message });
+    return { has_images: false };
+  }
+};
+var buildNextStep = (data) => {
+  if (data.has_toc || data.has_images) {
+    return {
+      suggestion: "To read content, use pdf_read (Stage 1). To search for specific terms, use pdf_search.",
+      tools: ["pdf_read", "pdf_search"]
+    };
+  }
+  return {
+    suggestion: "Use pdf_read (Stage 1) to extract text from pages.",
+    tools: ["pdf_read"]
+  };
+};
+var buildBaseData = async (pdfDocument) => {
+  const metadata = await extractMetadataAndPageCount(pdfDocument, true, true);
+  const fingerprint = getFingerprint2(pdfDocument);
+  return {
+    pages: metadata.num_pages ?? pdfDocument.numPages,
+    ...metadata.info?.Title ? { title: metadata.info.Title } : {},
+    ...metadata.info?.Author ? { author: metadata.info.Author } : {},
+    ...metadata.info?.Language !== undefined ? { language: metadata.info.Language } : {},
+    ...fingerprint ? { fingerprint } : {}
+  };
+};
+var enrichData = async (data, pdfDocument, sourceDescription, includeToc, includeStats) => {
+  if (includeToc) {
+    const tocInfo = await getTocInfo(pdfDocument, sourceDescription);
+    data.has_toc = tocInfo.has_toc;
+    if (tocInfo.toc_entries !== undefined) {
+      data.toc_entries = tocInfo.toc_entries;
+    }
+  }
+  if (includeStats) {
+    const imageStats = await getImageStats(pdfDocument, sourceDescription);
+    data.has_images = imageStats.has_images;
+    if (imageStats.image_count !== undefined) {
+      data.image_count = imageStats.image_count;
+    }
+  }
+};
+var processSource = async (args) => {
+  const { source, include } = args;
+  const sourceDescription = source.path ?? source.url ?? "unknown source";
+  const loadArgs = buildLoadArgs3(source);
+  const includeToc = include?.includes("toc") ?? false;
+  const includeStats = include?.includes("stats") ?? false;
+  return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
+    const data = await buildBaseData(pdfDocument);
+    await enrichData(data, pdfDocument, sourceDescription, includeToc, includeStats);
+    data.next_step = buildNextStep({
+      has_toc: data.has_toc,
+      has_images: data.has_images
+    });
+    return {
+      source: sourceDescription,
+      success: true,
+      data
+    };
+  });
+};
+var pdfInfo = tool9().description(`QUICK CHECK: Get PDF metadata and overview
+
+` + `Use for fast answers about the PDF without loading content:
+` + `- How many pages?
+` + `- Title/author/language?
+` + `- Has table of contents? (with include=["toc"])
+` + `- Has images? (with include=["stats"])
+
+` + `This is FAST and LIGHTWEIGHT - perfect before deciding which pages to read.
+
+` + `Example:
+` + `  pdf_info({source: {path: "doc.pdf"}})
+` + '  pdf_info({source: {path: "doc.pdf"}, include: ["toc", "stats"]})').input(pdfInfoArgsSchema).handler(async ({ input }) => {
+  try {
+    const result = await processSource(input);
+    return [text9(JSON.stringify(result, null, 2))];
+  } catch (error) {
+    const sourceDescription = input.source.path ?? input.source.url ?? "unknown source";
+    const message = error instanceof Error ? error.message : String(error);
+    const errorResult = {
+      source: sourceDescription,
+      success: false,
+      error: `Failed to get info for ${sourceDescription}. Reason: ${message}`
+    };
+    return toolError9(JSON.stringify(errorResult));
+  }
+});
+
+// src/handlers/pdfRead.ts
+import { text as text10, tool as tool10, toolError as toolError10 } from "@sylphx/mcp-server-sdk";
 
 // src/pdf/tableDetection.ts
 var detectTables = (items) => {
@@ -2509,37 +2690,37 @@ var buildNormalizedPageText = (items, options) => {
       }
     }
   }
-  const text9 = normalizedLines.join(`
+  const text10 = normalizedLines.join(`
 `);
   if (maxCharsPerPage !== undefined && consumed > maxCharsPerPage) {
     truncated = true;
   }
-  return { lines: normalizedLines, text: text9, truncated };
+  return { lines: normalizedLines, text: text10, truncated };
 };
 
-// src/schemas/readPages.ts
+// src/schemas/pdfRead.ts
 import {
-  array as array6,
+  array as array7,
   bool as bool5,
-  description as description8,
+  description as description9,
   gte as gte4,
   int as int3,
   num as num4,
-  object as object9,
-  optional as optional7
+  object as object10,
+  optional as optional8
 } from "@sylphx/vex";
-var readPagesArgsSchema = object9({
-  sources: array6(pdfSourceSchema),
-  include_image_indexes: optional7(bool5(description8("Include image indexes for each page (no image data is returned)."))),
-  insert_markers: optional7(bool5(description8("Insert [IMAGE] and [TABLE] markers inline with text at their approximate positions. " + "Helps identify pages with complex content that may need OCR."))),
-  max_chars_per_page: optional7(num4(int3, gte4(1), description8("Maximum characters to return per page before truncating."))),
-  preserve_whitespace: optional7(bool5(description8("Preserve original whitespace from the PDF."))),
-  trim_lines: optional7(bool5(description8("Trim leading/trailing whitespace for each text line."))),
-  allow_full_document: optional7(bool5(description8("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+var pdfReadArgsSchema = object10({
+  sources: array7(pdfSourceSchema),
+  include_image_indexes: optional8(bool5(description9("Include image indexes for each page (no image data is returned)."))),
+  insert_markers: optional8(bool5(description9("Insert [IMAGE] and [TABLE] markers inline with text at their approximate positions. " + "Helps identify pages with complex content that may need OCR."))),
+  max_chars_per_page: optional8(num4(int3, gte4(1), description9("Maximum characters to return per page before truncating."))),
+  preserve_whitespace: optional8(bool5(description9("Preserve original whitespace from the PDF."))),
+  trim_lines: optional8(bool5(description9("Trim leading/trailing whitespace for each text line."))),
+  allow_full_document: optional8(bool5(description9("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
 });
 
-// src/handlers/readPages.ts
-var logger15 = createLogger("ReadPages");
+// src/handlers/pdfRead.ts
+var logger16 = createLogger("PdfRead");
 var processPage = async (pdfDocument, pageNum, sourceDescription, options, fingerprint, pageLabel) => {
   const cached = getCachedPageText(fingerprint, pageNum, options);
   if (cached) {
@@ -2577,7 +2758,7 @@ var getPageLabelsSafe = async (pdfDocument, sourceDescription) => {
     return await pdfDocument.getPageLabels();
   } catch (labelError) {
     const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger15.warn("Error retrieving page labels", { sourceDescription, error: message });
+    logger16.warn("Error retrieving page labels", { sourceDescription, error: message });
   }
   return null;
 };
@@ -2602,7 +2783,7 @@ var destroyPdfDocument = async (pdfDocument, sourceDescription) => {
     await pdfDocument.destroy();
   } catch (destroyError) {
     const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger15.warn("Error destroying PDF document", { sourceDescription, error: message });
+    logger16.warn("Error destroying PDF document", { sourceDescription, error: message });
   }
 };
 var processSourcePages = async (source, sourceDescription, options, allowFullDocument) => {
@@ -2649,7 +2830,14 @@ var processSourcePages = async (source, sourceDescription, options, allowFullDoc
   }
   return result;
 };
-var pdfReadPages = tool9().description("Reads structured text for specific PDF pages with optional image indexes and content markers.").input(readPagesArgsSchema).handler(async ({ input }) => {
+var pdfRead = tool10().description(`STAGE 1: Extract text from PDF pages
+
+` + `ALWAYS USE THIS FIRST before other tools.
+
+` + "Returns structured text with line-by-line content. Use insert_markers=true to see where [IMAGE] and [TABLE] markers appear - " + `if you see these markers, you may need Stage 2 (pdf_extract_image) or Stage 3 (pdf_ocr) for those specific elements.
+
+` + `Example:
+` + '  pdf_read({sources: [{path: "doc.pdf", pages: "1-5"}], insert_markers: true})').input(pdfReadArgsSchema).handler(async ({ input }) => {
   const {
     sources,
     include_image_indexes,
@@ -2678,27 +2866,27 @@ var pdfReadPages = tool9().description("Reads structured text for specific PDF p
   }
   if (results.every((r) => !r.success)) {
     const errors = results.map((r) => r.error).join("; ");
-    return toolError9(`All sources failed to return page content: ${errors}`);
+    return toolError10(`All sources failed to return page content: ${errors}`);
   }
-  return [text9(JSON.stringify({ results }, null, 2))];
+  return [text10(JSON.stringify({ results }, null, 2))];
 });
 
 // src/handlers/readPdf.ts
-import { image as image2, text as text10, tool as tool10, toolError as toolError10 } from "@sylphx/mcp-server-sdk";
+import { image as image2, text as text11, tool as tool11, toolError as toolError11 } from "@sylphx/mcp-server-sdk";
 
 // src/schemas/readPdf.ts
-import { array as array7, bool as bool6, description as description9, object as object10, optional as optional8 } from "@sylphx/vex";
-var readPdfArgsSchema = object10({
-  sources: array7(pdfSourceSchema),
-  include_full_text: optional8(bool6(description9("Include the full text content of each PDF (only if 'pages' is not specified for that source)."))),
-  include_metadata: optional8(bool6(description9("Include metadata and info objects for each PDF."))),
-  include_page_count: optional8(bool6(description9("Include the total number of pages for each PDF."))),
-  include_images: optional8(bool6(description9("Extract and include embedded images from the PDF pages as base64-encoded data."))),
-  allow_full_document: optional8(bool6(description9("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+import { array as array8, bool as bool6, description as description10, object as object11, optional as optional9 } from "@sylphx/vex";
+var readPdfArgsSchema = object11({
+  sources: array8(pdfSourceSchema),
+  include_full_text: optional9(bool6(description10("Include the full text content of each PDF (only if 'pages' is not specified for that source)."))),
+  include_metadata: optional9(bool6(description10("Include metadata and info objects for each PDF."))),
+  include_page_count: optional9(bool6(description10("Include the total number of pages for each PDF."))),
+  include_images: optional9(bool6(description10("Extract and include embedded images from the PDF pages as base64-encoded data."))),
+  allow_full_document: optional9(bool6(description10("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
 });
 
 // src/handlers/readPdf.ts
-var logger16 = createLogger("ReadPdf");
+var logger17 = createLogger("ReadPdf");
 var processSingleSource = async (source, options) => {
   const MAX_CONCURRENT_PAGES = 5;
   const sourceDescription = source.path ?? source.url ?? "unknown source";
@@ -2777,13 +2965,13 @@ var processSingleSource = async (source, options) => {
         await pdfDocument.destroy();
       } catch (destroyError) {
         const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-        logger16.warn("Error destroying PDF document", { sourceDescription, error: message });
+        logger17.warn("Error destroying PDF document", { sourceDescription, error: message });
       }
     }
   }
   return individualResult;
 };
-var readPdf = tool10().description("Reads content/metadata/images from one or more PDFs (local/URL). Each source can specify pages to extract.").input(readPdfArgsSchema).handler(async ({ input }) => {
+var readPdf = tool11().description("Reads content/metadata/images from one or more PDFs (local/URL). Each source can specify pages to extract.").input(readPdfArgsSchema).handler(async ({ input }) => {
   const {
     sources,
     include_full_text,
@@ -2809,7 +2997,7 @@ var readPdf = tool10().description("Reads content/metadata/images from one or mo
   const allFailed = results.every((r) => !r.success);
   if (allFailed) {
     const errorMessages = results.map((r) => r.error).join("; ");
-    return toolError10(`All PDF sources failed to process: ${errorMessages}`);
+    return toolError11(`All PDF sources failed to process: ${errorMessages}`);
   }
   const content = [];
   const resultsForJson = results.map((result) => {
@@ -2829,14 +3017,14 @@ var readPdf = tool10().description("Reads content/metadata/images from one or mo
     }
     return result;
   });
-  content.push(text10(JSON.stringify({ results: resultsForJson }, null, 2)));
+  content.push(text11(JSON.stringify({ results: resultsForJson }, null, 2)));
   for (const result of results) {
     if (!result.success || !result.data?.page_contents)
       continue;
     for (const pageContent of result.data.page_contents) {
       for (const item of pageContent.items) {
         if (item.type === "text" && item.textContent) {
-          content.push(text10(item.textContent));
+          content.push(text11(item.textContent));
         } else if (item.type === "image" && item.imageData) {
           content.push(image2(item.imageData.data, "image/png"));
         }
@@ -2847,18 +3035,18 @@ var readPdf = tool10().description("Reads content/metadata/images from one or mo
 });
 
 // src/handlers/renderPage.ts
-import { image as image3, text as text11, tool as tool11, toolError as toolError11 } from "@sylphx/mcp-server-sdk";
+import { image as image3, text as text12, tool as tool12, toolError as toolError12 } from "@sylphx/mcp-server-sdk";
 
 // src/schemas/renderPage.ts
-import { description as description10, gte as gte5, num as num5, object as object11, optional as optional9 } from "@sylphx/vex";
-var renderPageArgsSchema = object11({
+import { description as description11, gte as gte5, num as num5, object as object12, optional as optional10 } from "@sylphx/vex";
+var renderPageArgsSchema = object12({
   source: pdfSourceSchema,
-  page: num5(gte5(1), description10("1-based page number to render.")),
-  scale: optional9(num5(gte5(0.1), description10("Rendering scale factor (1.0 = 100%).")))
+  page: num5(gte5(1), description11("1-based page number to render.")),
+  scale: optional10(num5(gte5(0.1), description11("Rendering scale factor (1.0 = 100%).")))
 });
 
 // src/handlers/renderPage.ts
-var logger17 = createLogger("RenderPage");
+var logger18 = createLogger("RenderPage");
 var renderTargetPage = async (source, sourceDescription, page, scale) => {
   return withPdfDocument(source, sourceDescription, async (pdfDocument) => {
     const totalPages = pdfDocument.numPages;
@@ -2880,7 +3068,7 @@ var renderTargetPage = async (source, sourceDescription, page, scale) => {
     };
   });
 };
-var pdfRenderPage = tool11().description("Rasterize a PDF page to PNG and return metadata plus base64 image content.").input(renderPageArgsSchema).handler(async ({ input }) => {
+var pdfRenderPage = tool12().description("Rasterize a PDF page to PNG and return metadata plus base64 image content.").input(renderPageArgsSchema).handler(async ({ input }) => {
   const { source, page, scale } = input;
   const sourceDescription = source.path ?? source.url ?? "unknown source";
   const normalizedSource = {
@@ -2889,45 +3077,45 @@ var pdfRenderPage = tool11().description("Rasterize a PDF page to PNG and return
   };
   try {
     const result = await renderTargetPage(normalizedSource, sourceDescription, page, scale);
-    return [text11(JSON.stringify(result.metadata, null, 2)), image3(result.imageData, "image/png")];
+    return [text12(JSON.stringify(result.metadata, null, 2)), image3(result.imageData, "image/png")];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger17.error("Failed to render page", { sourceDescription, page, error: message });
-    return toolError11(`Failed to render page from ${sourceDescription}. Reason: ${message}`);
+    logger18.error("Failed to render page", { sourceDescription, page, error: message });
+    return toolError12(`Failed to render page from ${sourceDescription}. Reason: ${message}`);
   }
 });
 
 // src/handlers/searchPdf.ts
-import { text as text12, tool as tool12, toolError as toolError12 } from "@sylphx/mcp-server-sdk";
+import { text as text13, tool as tool13, toolError as toolError13 } from "@sylphx/mcp-server-sdk";
 
 // src/schemas/pdfSearch.ts
 import {
-  array as array8,
+  array as array9,
   bool as bool7,
-  description as description11,
+  description as description12,
   gte as gte6,
   int as int4,
   min as min2,
   num as num6,
-  object as object12,
-  optional as optional10,
-  str as str4
+  object as object13,
+  optional as optional11,
+  str as str5
 } from "@sylphx/vex";
-var pdfSearchArgsSchema = object12({
-  sources: array8(pdfSourceSchema),
-  query: str4(min2(1), description11("Plain text or regular expression to search for within pages.")),
-  use_regex: optional10(bool7(description11("Treat the query as a regular expression."))),
-  case_sensitive: optional10(bool7(description11("Enable case sensitive matching."))),
-  context_chars: optional10(num6(int4, gte6(0), description11("Number of characters to include before/after each match."))),
-  max_hits: optional10(num6(int4, gte6(1), description11("Maximum number of matches to return across all pages."))),
-  max_chars_per_page: optional10(num6(int4, gte6(1), description11("Truncate each page before searching to control payload size."))),
-  preserve_whitespace: optional10(bool7(description11("Preserve original whitespace when building text."))),
-  trim_lines: optional10(bool7(description11("Trim leading/trailing whitespace for each text line."))),
-  allow_full_document: optional10(bool7(description11("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+var pdfSearchArgsSchema = object13({
+  sources: array9(pdfSourceSchema),
+  query: str5(min2(1), description12("Plain text or regular expression to search for within pages.")),
+  use_regex: optional11(bool7(description12("Treat the query as a regular expression."))),
+  case_sensitive: optional11(bool7(description12("Enable case sensitive matching."))),
+  context_chars: optional11(num6(int4, gte6(0), description12("Number of characters to include before/after each match."))),
+  max_hits: optional11(num6(int4, gte6(1), description12("Maximum number of matches to return across all pages."))),
+  max_chars_per_page: optional11(num6(int4, gte6(1), description12("Truncate each page before searching to control payload size."))),
+  preserve_whitespace: optional11(bool7(description12("Preserve original whitespace when building text."))),
+  trim_lines: optional11(bool7(description12("Trim leading/trailing whitespace for each text line."))),
+  allow_full_document: optional11(bool7(description12("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
 });
 
 // src/handlers/searchPdf.ts
-var logger18 = createLogger("PdfSearch");
+var logger19 = createLogger("PdfSearch");
 var findPlainMatches = (textToSearch, query, options, remaining) => {
   const matches = [];
   const haystack = options.caseSensitive ? textToSearch : textToSearch.toLowerCase();
@@ -2973,7 +3161,7 @@ var getPageLabelsSafe2 = async (pdfDocument, sourceDescription) => {
     return await pdfDocument.getPageLabels();
   } catch (labelError) {
     const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger18.warn("Error retrieving page labels", { sourceDescription, error: message });
+    logger19.warn("Error retrieving page labels", { sourceDescription, error: message });
   }
   return null;
 };
@@ -3026,7 +3214,7 @@ var destroyPdfDocument2 = async (pdfDocument, sourceDescription) => {
     await pdfDocument.destroy();
   } catch (destroyError) {
     const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger18.warn("Error destroying PDF document", { sourceDescription, error: message });
+    logger19.warn("Error destroying PDF document", { sourceDescription, error: message });
   }
 };
 var processSearchSource = async (source, sourceDescription, options, allowFullDocument) => {
@@ -3072,7 +3260,7 @@ var processSearchSource = async (source, sourceDescription, options, allowFullDo
   }
   return result;
 };
-var pdfSearch = tool12().description("Searches PDF pages with plain text or regex and returns match contexts.").input(pdfSearchArgsSchema).handler(async ({ input }) => {
+var pdfSearch = tool13().description("Searches PDF pages with plain text or regex and returns match contexts.").input(pdfSearchArgsSchema).handler(async ({ input }) => {
   const {
     sources,
     query,
@@ -3100,7 +3288,7 @@ var pdfSearch = tool12().description("Searches PDF pages with plain text or rege
       new RegExp(query);
     } catch (regexError) {
       const message = regexError instanceof Error ? regexError.message : String(regexError);
-      return toolError12(`Invalid regular expression: ${message}`);
+      return toolError13(`Invalid regular expression: ${message}`);
     }
   }
   const MAX_CONCURRENT_SOURCES2 = 3;
@@ -3124,26 +3312,34 @@ var pdfSearch = tool12().description("Searches PDF pages with plain text or rege
   }
   if (results.every((r) => !r.success)) {
     const errors = results.map((r) => r.error).join("; ");
-    return toolError12(`All sources failed to search: ${errors}`);
+    return toolError13(`All sources failed to search: ${errors}`);
   }
-  return [text12(JSON.stringify({ results }, null, 2))];
+  return [text13(JSON.stringify({ results }, null, 2))];
 });
 
 // src/index.ts
 var originalStdoutWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, encoding, callback) => {
-  const str5 = chunk.toString();
-  if (str5.includes("Cannot polyfill") || str5.includes("DOMMatrix")) {
-    process.stderr.write(chunk, encoding, callback);
+process.stdout.write = (chunk, encodingOrCallback, callback) => {
+  const str6 = chunk.toString();
+  if (str6.includes("Cannot polyfill") || str6.includes("DOMMatrix")) {
+    if (typeof encodingOrCallback === "function") {
+      process.stderr.write(chunk, encodingOrCallback);
+    } else {
+      process.stderr.write(chunk, encodingOrCallback, callback);
+    }
     return true;
   }
-  return originalStdoutWrite(chunk, encoding, callback);
+  if (typeof encodingOrCallback === "function") {
+    return originalStdoutWrite(chunk, encodingOrCallback);
+  }
+  return originalStdoutWrite(chunk, encodingOrCallback, callback);
 };
 var server = createServer({
   name: "pdf-reader-mcp",
   version: "2.1.0",
   instructions: "PDF toolkit for MCP clients: retrieve metadata, compute page statistics, inspect TOCs, read structured pages, search text, extract text/images, rasterize pages, perform OCR with caching, and manage caches (read_pdf maintained for compatibility).",
   tools: {
+    pdf_info: pdfInfo,
     pdf_get_metadata: pdfGetMetadata,
     pdf_get_page_stats: pdfGetPageStats,
     pdf_get_toc: pdfGetToc,
@@ -3154,7 +3350,7 @@ var server = createServer({
     pdf_ocr_image: pdfOcrImage,
     pdf_cache_stats: pdfCacheStats,
     pdf_cache_clear: pdfCacheClear,
-    pdf_read_pages: pdfReadPages,
+    pdf_read: pdfRead,
     pdf_search: pdfSearch,
     read_pdf: readPdf
   },

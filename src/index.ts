@@ -41,7 +41,7 @@ import { pdfListImages } from './handlers/listImages.js';
 import { pdfOcrImage } from './handlers/ocrImage.js';
 import { pdfOcrPage } from './handlers/ocrPage.js';
 import { pdfInfo } from './handlers/pdfInfo.js';
-import { pdfReadPages } from './handlers/readPages.js';
+import { pdfRead } from './handlers/pdfRead.js';
 import { readPdf } from './handlers/readPdf.js';
 import { pdfRenderPage } from './handlers/renderPage.js';
 import { pdfSearch } from './handlers/searchPdf.js';
@@ -63,7 +63,7 @@ const server = createServer({
     pdf_ocr_image: pdfOcrImage,
     pdf_cache_stats: pdfCacheStats,
     pdf_cache_clear: pdfCacheClear,
-    pdf_read_pages: pdfReadPages,
+    pdf_read: pdfRead,
     pdf_search: pdfSearch,
     read_pdf: readPdf,
   },

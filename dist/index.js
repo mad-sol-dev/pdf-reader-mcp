@@ -1953,8 +1953,7 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
       source: sourceDescription,
       success: true,
       data: {
-        text: ocr.text,
-        provider: ocr.provider,
+        ...ocr,
         fingerprint,
         from_cache: false,
         image: { page, index }
@@ -2214,8 +2213,7 @@ var performPageOcr = async (source, sourceDescription, page, scale, provider, us
       source: sourceDescription,
       success: true,
       data: {
-        text: ocr.text,
-        provider: ocr.provider,
+        ...ocr,
         fingerprint,
         from_cache: false,
         page

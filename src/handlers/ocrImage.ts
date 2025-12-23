@@ -121,8 +121,7 @@ const performImageOcr = async (
       source: sourceDescription,
       success: true,
       data: {
-        text: ocr.text,
-        provider: ocr.provider,
+        ...ocr, // Spread all OCR result fields (including pages, model, usage_info if present)
         fingerprint,
         from_cache: false,
         image: { page, index },

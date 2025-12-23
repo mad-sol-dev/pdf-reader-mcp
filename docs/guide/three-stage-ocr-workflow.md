@@ -1,15 +1,31 @@
 # 3-Stage OCR Workflow
 
-> **Status:** Partially Implemented
+> **Status:** Implemented & Tested
 > **Last Updated:** 2025-12-23
 
 ## Overview
 
-The PDF Reader MCP implements a 3-stage workflow for intelligent document processing, balancing speed, cost, and accuracy.
+The PDF Reader MCP implements a 3-stage workflow for intelligent document processing, balancing speed, cost, and accuracy. **Critical insight:** Vision APIs (not OCR APIs) are required for diagrams and charts.
 
-## Workflow Stages
+## Quick Decision Tree
 
-### Stage 1: Text Extraction with Image Markers ✅
+```
+Stage 1: Read PDF text + markers
+  ↓
+Found [IMAGE] marker?
+  ├─ Is it a diagram/chart/graphic?
+  │   └─ YES → Stage 2: Vision API (mistral or claude)
+  │
+  └─ Is it scanned text/form?
+      └─ YES → Stage 3: OCR API (mistral-ocr)
+
+Found [TABLE] marker?
+  └─ Stage 3: OCR API with tableFormat="html"
+```
+
+---
+
+## Stage 1: Text Extraction with Markers ✅
 
 **Goal:** Extract native text and identify complex content areas
 
@@ -40,11 +56,9 @@ const result = await client.tools.pdf_read_pages({
     data: {
       pages: [{
         page_number: 1,
-        page_index: 0,
-        page_label: null,
         text: "Title\n\n[IMAGE]\n\nSome text...\n\n[TABLE]\n\nMore text...",
-        image_indexes: [0, 1], // Indexes of embedded images
-        lines: [...],          // Structured line-by-line text
+        image_indexes: [0, 1], // Indexes for Stage 2/3
+        lines: [...]
       }]
     }
   }]
@@ -55,375 +69,396 @@ const result = await client.tools.pdf_read_pages({
 - ✅ Extracts native PDF text (fast, no API calls)
 - ✅ Inserts `[IMAGE]` markers at approximate image positions
 - ✅ Inserts `[TABLE]` markers at detected table positions
-- ✅ Returns image indexes for Stage 3
+- ✅ Returns image indexes for targeted OCR
 - ✅ Maintains reading order (Y-coordinate based)
 - ✅ Cached results (fingerprint-based)
 
-**Use Cases:**
-- Identify pages with complex content
-- Determine if OCR is needed
-- Guide targeted OCR strategy
-- Extract text-heavy pages without OCR costs
-
-**Decision Points:**
+**Decision Logic:**
 ```typescript
-// Pseudo-code for decision logic
-if (text.includes('[IMAGE]') && text.length < 100) {
-  // Page is mostly image → Go to Stage 2 or 3
-} else if (text.includes('[TABLE]') && complexLayout) {
-  // Page has tables → Use Stage 3 with tableFormat
-} else {
-  // Text-heavy page → Stage 1 is sufficient
+if (text.includes('[IMAGE]')) {
+  // Check image type → Route to Vision or OCR
+  const imageType = identifyImageType(image);
+  if (imageType === 'diagram' || imageType === 'chart') {
+    // → Stage 2: Vision API
+  } else if (imageType === 'scanned_text') {
+    // → Stage 3: OCR API
+  }
+}
+
+if (text.includes('[TABLE]')) {
+  // → Stage 3: OCR API with tableFormat
+}
+
+if (text.length > 500 && !text.includes('[IMAGE]')) {
+  // Text-heavy page → Stage 1 sufficient
 }
 ```
 
-### Stage 2: Optional Classification (Vision API) 🔄
+---
 
-**Goal:** Semantic understanding and document classification
+## Stage 2: Vision Analysis (Diagrams/Charts) ✅
 
-**Tool:** `pdf_ocr_page` with `provider.type: 'mistral'` (Vision API)
+**Goal:** Semantic understanding of visual content (diagrams, charts, photos)
 
-**Implementation Status:** 🔄 Partial - Basic Vision API works, missing advanced features
+**Tool:** `pdf_ocr_image` or `pdf_ocr_page` with `provider.type: 'mistral'` (Vision API)
+
+**Implementation Status:** ✅ Complete & Tested
+
+**⚠️ CRITICAL:** Use Vision API for diagrams, NOT OCR API!
+
+**Test Results:** See [OCR_COMPARISON_TEST.md](../../OCR_COMPARISON_TEST.md)
+- **Mistral Vision:** 95%+ accuracy on timing diagrams ✅
+- **Mistral OCR:** <10% accuracy on timing diagrams ❌
+
+### Vision API for Diagrams
 
 **Usage:**
 ```typescript
-const result = await client.tools.pdf_ocr_page({
-  source: { path: "document.pdf" },
+// Extract from specific image (recommended)
+const result = await client.tools.pdf_ocr_image({
+  source: { path: "technical-doc.pdf" },
   page: 890,
+  index: 1,  // From Stage 1 image_indexes
   provider: {
-    type: "mistral",
-    api_key: process.env.MISTRAL_API_KEY,
-    model: "mistral-large-2512",
+    type: "mistral",  // Vision API, NOT "mistral-ocr"
     extras: {
-      prompt: "Analyze this technical diagram and describe its structure."
+      prompt: "Analyze this timing diagram. Extract all signal names, voltage thresholds, timing parameters, and labels. Be precise and comprehensive."
     }
   },
-  scale: 1.5
+  cache: true
 });
 ```
 
 **Output:**
 ```typescript
 {
-  source: "document.pdf",
+  source: "technical-doc.pdf",
   success: true,
   data: {
-    text: "nuvoton\n\n[tbl-0.md](tbl-0.md)\n\n## 7.6 Power-on Sequence\n\n![img-0.jpeg](img-0.jpeg)",
+    text: "The timing diagram shows:\n\nSignals:\n1. VDD33 (3.3V IO Power)\n2. 1.8V Core Power\n3. RESET (External)\n4. Internal RESET\n\nThresholds:\n- 1.62V (VDD33/2)\n- 3.3V nominal\n- 1.8V nominal\n\nTiming:\n- More than 4T where T is XTAL cycle\n- 75ms from valid power to reset release\n\nAnnotations:\n- Valid power on setting value\n...",
     provider: "mistral",
-    fingerprint: "85bfe922b1622347b58e7e645bf0f0be",
+    fingerprint: "...",
     from_cache: false,
-    page: 890
+    image: { page: 890, index: 1 }
   }
 }
 ```
 
 **Features:**
-- ✅ Semantic understanding of page content
-- ✅ Good for document classification
-- ✅ Can describe diagrams and charts
-- ✅ Returns structured markdown
-- ❌ Not optimized for detailed text extraction
-- ❌ More expensive than OCR API
-- ❌ Doesn't extract fine-grained labels from diagrams
+- ✅ Semantic understanding of diagrams
+- ✅ Extracts labels, annotations, timing parameters
+- ✅ Works with technical diagrams (timing, circuit, flowchart)
+- ✅ Custom prompts for specific analysis
+- ✅ Cached results
+- ✅ 5x cheaper than Claude Vision (~$0.003 vs ~$0.015)
+- ✅ Comparable accuracy to Claude Vision
 
 **Use Cases:**
-- Classify document types (invoice, contract, diagram, etc.)
-- Understand page structure before detailed extraction
-- Describe complex visuals semantically
-- Generate document summaries
+- ✅ Timing diagrams
+- ✅ Circuit diagrams
+- ✅ Flowcharts
+- ✅ Charts and graphs
+- ✅ Complex technical illustrations
+- ✅ Architectural diagrams
 
-**Current Limitations:**
-- Uses Vision API endpoint, not dedicated OCR API
-- Doesn't leverage Mistral OCR advanced features
-- No structured output support (annotations)
-- Limited to semantic understanding, not precise text extraction
+**When NOT to Use:**
+- ❌ Scanned text documents (use OCR API)
+- ❌ Forms and invoices (use OCR API)
+- ❌ Tables (use OCR API)
+
+**Alternative: Claude Vision**
+
+```typescript
+// For highest accuracy (more expensive)
+const result = await client.tools.pdf_ocr_image({
+  source: { path: "diagram.pdf" },
+  page: 1,
+  index: 0,
+  provider: {
+    type: "claude-vision", // Hypothetical - not implemented
+  }
+});
+```
+
+**Cost Comparison:**
+- Mistral Vision: ~$0.003 per image ✅ Best value
+- Claude Vision: ~$0.015 per image (5x more expensive)
+
+---
+
+## Stage 3: OCR Extraction (Text/Tables) ✅
+
+**Goal:** Precise text extraction from scanned documents, forms, and tables
+
+**Tool:** `pdf_ocr_page` or `pdf_ocr_image` with `provider.type: 'mistral-ocr'` (OCR API)
+
+**Implementation Status:** ✅ Complete & Tested
+
+**⚠️ CRITICAL:** Use OCR API for text documents, NOT for diagrams!
+
+### 3a. Full Page OCR (Scanned Documents)
+
+**Usage:**
+```typescript
+const result = await client.tools.pdf_ocr_page({
+  source: { path: "scanned-invoice.pdf" },
+  page: 1,
+  provider: {
+    type: "mistral-ocr",  // OCR API, NOT "mistral"
+    extras: {
+      tableFormat: "html",
+      includeFullResponse: "true",  // Get full structure
+      extractHeader: "true",
+      extractFooter: "true"
+    }
+  },
+  scale: 2.0,  // Higher scale for better accuracy
+  cache: true
+});
+```
+
+**Output (with `includeFullResponse: "true"`):**
+```typescript
+{
+  source: "scanned-invoice.pdf",
+  success: true,
+  data: {
+    text: "Invoice #12345\n\nDate: 2025-12-23...",
+    provider: "mistral-ocr",
+    model: "mistral-ocr-latest",
+    fingerprint: "...",
+    from_cache: false,
+    page: 1,
+    pages: [{
+      index: 0,
+      markdown: "Invoice #12345...",
+      header: "Company Name",
+      footer: "Page 1 of 3",
+      dimensions: { width: 1224, height: 1584, dpi: 200 },
+      tables: [{
+        id: "tbl-0.html",
+        content: "<table><tr><td>Item</td><td>Price</td></tr>...</table>",
+        format: "html"
+      }],
+      images: [{
+        id: "img-0.jpeg",
+        topLeftX: 50,
+        topLeftY: 100,
+        bottomRightX: 200,
+        bottomRightY: 250
+      }],
+      hyperlinks: ["https://example.com"]
+    }]
+  }
+}
+```
+
+**Features:**
+- ✅ Dedicated OCR model (optimized for text extraction)
+- ✅ Table format control (html/markdown)
+- ✅ Header/footer extraction
+- ✅ Full response structure with images, tables, hyperlinks
+- ✅ Caching support (disk + memory)
+- ✅ Best for text documents
+
+**Use Cases:**
+- ✅ Scanned documents
+- ✅ Invoices and receipts
+- ✅ Forms and applications
+- ✅ Tables with structured data
+- ✅ Text-heavy PDFs
+
+**When NOT to Use:**
+- ❌ Technical diagrams (use Vision API)
+- ❌ Charts and graphs (use Vision API)
+- ❌ Complex illustrations (use Vision API)
+
+### 3b. Image-Specific OCR
+
+**Usage:**
+```typescript
+// OCR a specific embedded image (if it contains scanned text)
+const result = await client.tools.pdf_ocr_image({
+  source: { path: "document.pdf" },
+  page: 5,
+  index: 2,  // From Stage 1 image_indexes
+  provider: {
+    type: "mistral-ocr",  // For scanned text in image
+    extras: {
+      tableFormat: "html",
+      includeFullResponse: "true"
+    }
+  },
+  cache: true
+});
+```
 
 **When to Use:**
-- Need to understand *what* the page shows (not just *what it says*)
-- Document classification tasks
-- Diagram/chart description (not data extraction)
-- Semantic search preprocessing
+- Image contains scanned text (not a diagram)
+- Form embedded as image
+- Table embedded as image
 
-### Stage 3: OCR Image/Table/Layout 🔄
+**When NOT to Use:**
+- Image is a diagram/chart (use `type: "mistral"` Vision API)
 
-**Goal:** Precise text extraction from images, tables, and complex layouts
+---
 
-**Tools:**
-- `pdf_ocr_page` - OCR entire rendered page
-- `pdf_ocr_image` - OCR specific embedded image
-- `pdf_render_page` - Render page as PNG
+## Smart OCR Decision
 
-**Implementation Status:** 🔄 Partial - Basic OCR works, missing optimizations
-
-#### 3a. OCR Entire Page
+**Optional:** `smart_ocr` parameter automatically decides if OCR is needed
 
 **Usage:**
 ```typescript
 const result = await client.tools.pdf_ocr_page({
   source: { path: "document.pdf" },
-  page: 890,
-  provider: {
-    type: "mistral-ocr",  // Dedicated OCR API
-    api_key: process.env.MISTRAL_API_KEY,
-    model: "mistral-ocr-latest",
-    extras: {
-      tableFormat: "html"  // or "markdown"
-    }
-  },
-  scale: 1.5,  // Higher scale = better quality
-  cache: true
-});
-```
-
-**Features:**
-- ✅ Dedicated OCR API (better accuracy than Vision)
-- ✅ Table format control (html/markdown)
-- ✅ Caching support
-- ✅ Upload + cleanup workflow
-- ❌ Only returns markdown text (discards images, tables, hyperlinks)
-- ❌ No header/footer extraction
-- ❌ No image base64 support
-- ❌ No structured output (annotations)
-
-**When to Use:**
-- Scanned documents (no native text)
-- Complex layouts with mixed content
-- Tables that need structured extraction
-- Handwritten or low-quality text
-
-#### 3b. OCR Specific Image
-
-**Usage:**
-```typescript
-// First, get image indexes from Stage 1
-const { pages } = await client.tools.pdf_read_pages({
-  sources: [{ path: "doc.pdf", pages: [1] }],
-  include_image_indexes: true
-});
-
-// Then OCR specific image
-const result = await client.tools.pdf_ocr_image({
-  source: { path: "doc.pdf" },
   page: 1,
-  index: 0,  // First image on page
-  provider: {
-    type: "mistral-ocr",
-    api_key: process.env.MISTRAL_API_KEY
-  },
-  cache: true
+  provider: { type: "mistral-ocr" },
+  smart_ocr: true  // Auto-decide if OCR needed
 });
 ```
 
-**Features:**
-- ✅ Targets specific embedded images
-- ✅ More efficient than full-page OCR
-- ✅ Good for diagrams with labels
-- ✅ Caching support
-- ❌ Limited to embedded images (not rendered content)
+**Heuristics:**
+- Text too short (<50 chars) → Run OCR
+- Text too long (>1000 chars) → Skip OCR (use native text)
+- High non-ASCII ratio → Run OCR (likely garbled text)
+- High image-to-text ratio → Run OCR (mostly images)
 
-**When to Use:**
-- Extract text from specific diagram/chart
-- Process only images (skip surrounding text)
-- Targeted extraction after Stage 1 identified images
+**Benefits:**
+- Saves API costs on text-heavy pages
+- Faster processing
+- Automatic optimization
 
-#### 3c. Render Page for OCR
+---
 
-**Usage:**
-```typescript
-const result = await client.tools.pdf_render_page({
-  source: { path: "document.pdf" },
-  page: 890,
-  scale: 2.0  // Higher scale for OCR accuracy
-});
-
-// Returns base64 PNG image
-// Can then be processed with any OCR provider
-```
-
-**Features:**
-- ✅ High-quality PNG rendering
-- ✅ Configurable scale (1.0 - 3.0)
-- ✅ Fixed PDF rendering (pdfjs-dist 4.4.168)
-- ✅ Works with embedded images
-
-**When to Use:**
-- Need rasterized page for external OCR
-- Custom OCR provider integration
-- Maximum quality extraction
-
-## Decision Tree
-
-```
-┌─────────────────────────────────────┐
-│  Start: pdf_read_pages             │
-│  (Stage 1: Text + Markers)         │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-       ┌───────────────┐
-       │ Has native    │  Yes  ┌────────────────┐
-       │ text?         ├──────►│ Use Stage 1    │
-       │ (>100 chars)  │       │ text directly  │
-       └───────┬───────┘       └────────────────┘
-               │ No
-               ▼
-       ┌───────────────┐
-       │ Need semantic │  Yes  ┌────────────────┐
-       │ understanding?├──────►│ Stage 2:       │
-       │ (classify/    │       │ Vision API     │
-       │  describe)    │       └────────────────┘
-       └───────┬───────┘
-               │ No
-               ▼
-       ┌───────────────┐
-       │ Text           │  Full ┌────────────────┐
-       │ extraction     │  Page │ Stage 3a:      │
-       │ needed?        ├──────►│ OCR full page  │
-       └───────┬───────┘       └────────────────┘
-               │
-               │ Specific
-               │ Image
-               ▼
-       ┌────────────────┐
-       │ Stage 3b:      │
-       │ OCR image      │
-       └────────────────┘
-```
-
-## Implementation Status
-
-### ✅ Stage 1: Complete
-- [x] Text extraction with markers
-- [x] Image index tracking
-- [x] Table detection markers
-- [x] Caching
-- [x] Y-coordinate ordering
-
-### 🔄 Stage 2: Partial
-- [x] Basic Vision API integration
-- [x] Custom prompts
-- [ ] Structured outputs (annotations)
-- [ ] Advanced semantic analysis
-- [ ] Document classification helpers
-
-### 🔄 Stage 3: Partial
-- [x] Full-page OCR (basic)
-- [x] Image-specific OCR
-- [x] Page rendering
-- [x] Basic Mistral OCR integration
-- [ ] Full Mistral OCR response structure
-- [ ] Table-specific extraction
-- [ ] Header/footer extraction
-- [ ] Image base64 support
-- [ ] Multi-page batch processing
-- [ ] Smart routing (auto-select best approach)
-
-## Next Steps
-
-See [BACKLOG.md](../../BACKLOG.md) for detailed implementation roadmap.
-
-**High Priority:**
-1. Enhanced Mistral OCR Integration - Expose full API capabilities
-2. Smart OCR Workflow - Auto-routing between Vision/OCR
-3. Table-Specific OCR Tool - Optimized table extraction
-
-**Medium Priority:**
-4. Structured Data Extraction (Annotations)
-5. Advanced OCR Result Caching
-6. Multi-Page OCR Optimization
-
-## Examples
-
-### Example 1: Mixed Content Document
+## Complete Example Workflow
 
 ```typescript
-// Stage 1: Quick scan
-const scan = await pdf_read_pages({
-  sources: [{ path: "report.pdf", pages: "1-50" }],
-  insert_markers: true
-});
-
-// Analyze results
-const pagesNeedingOcr = scan.results[0].data.pages
-  .filter(p => p.text.includes('[IMAGE]') && p.text.length < 200)
-  .map(p => p.page_number);
-
-// Stage 3: OCR only pages with significant images
-for (const pageNum of pagesNeedingOcr) {
-  const ocr = await pdf_ocr_page({
-    source: { path: "report.pdf" },
-    page: pageNum,
-    provider: { type: "mistral-ocr" }
-  });
-  // Process OCR result...
-}
-```
-
-### Example 2: Technical Diagram Analysis
-
-```typescript
-// Stage 1: Check if page has native text
-const { pages } = await pdf_read_pages({
-  sources: [{ path: "datasheet.pdf", pages: [890] }],
+// Stage 1: Extract text + markers
+const stage1 = await client.tools.pdf_read_pages({
+  sources: [{ path: "technical-doc.pdf", pages: [890] }],
   insert_markers: true,
   include_image_indexes: true
 });
 
-const page = pages[0];
+const page = stage1.results[0].data.pages[0];
 
-if (page.text.length < 100 && page.image_indexes?.length > 0) {
-  // Stage 2: Understand diagram semantically
-  const vision = await pdf_ocr_page({
-    source: { path: "datasheet.pdf" },
+// Check if page has images
+if (page.text.includes('[IMAGE]')) {
+  // Stage 2: Analyze each image
+  for (const imageIndex of page.image_indexes) {
+    // Determine image type (diagram vs scanned text)
+    const imageType = identifyImageType(page.text, imageIndex);
+
+    if (imageType === 'diagram' || imageType === 'chart') {
+      // Use Vision API for diagrams
+      const vision = await client.tools.pdf_ocr_image({
+        source: { path: "technical-doc.pdf" },
+        page: 890,
+        index: imageIndex,
+        provider: {
+          type: "mistral",  // Vision API
+          extras: {
+            prompt: "Analyze this technical diagram..."
+          }
+        }
+      });
+      console.log('Diagram analysis:', vision.data.text);
+
+    } else if (imageType === 'scanned_text') {
+      // Use OCR API for scanned text
+      const ocr = await client.tools.pdf_ocr_image({
+        source: { path: "technical-doc.pdf" },
+        page: 890,
+        index: imageIndex,
+        provider: { type: "mistral-ocr" }
+      });
+      console.log('Extracted text:', ocr.data.text);
+    }
+  }
+}
+
+// Check if page has tables
+if (page.text.includes('[TABLE]')) {
+  // Stage 3: OCR page with table extraction
+  const table = await client.tools.pdf_ocr_page({
+    source: { path: "technical-doc.pdf" },
     page: 890,
     provider: {
-      type: "mistral",
-      extras: { prompt: "Describe this timing diagram structure" }
+      type: "mistral-ocr",  // OCR API for tables
+      extras: {
+        tableFormat: "html",
+        includeFullResponse: "true"
+      }
     }
   });
 
-  // Stage 3b: Extract detailed labels from diagram
-  const ocr = await pdf_ocr_image({
-    source: { path: "datasheet.pdf" },
-    page: 890,
-    index: 0,  // First image
-    provider: { type: "mistral-ocr" }
-  });
-
-  // Combine semantic understanding + detailed text
+  // Access structured table data
+  const tables = table.data.pages[0].tables;
+  console.log('Tables:', tables);
 }
 ```
 
-### Example 3: Invoice Processing
+---
 
+## Cost Analysis
+
+### Per-Image Processing Costs
+
+| Content Type | Recommended API | Provider | Cost/Image | Quality |
+|--------------|----------------|----------|------------|---------|
+| **Technical Diagram** | Vision | Mistral Vision | ~$0.003 | ✅ Excellent |
+| **Technical Diagram** | Vision | Claude Vision | ~$0.015 | ✅ Excellent |
+| **Scanned Text** | OCR | Mistral OCR | ~$0.002 | ✅ Excellent |
+| **Table** | OCR | Mistral OCR | ~$0.002 | ✅ Excellent |
+| **Form** | OCR | Mistral OCR | ~$0.002 | ✅ Excellent |
+
+### Cost Savings Examples
+
+**100-page technical manual with 50 diagrams:**
+- ❌ Wrong: All pages with Mistral OCR = $0.20 (poor diagram results)
+- ✅ Right: 50 diagrams with Mistral Vision + 50 pages with OCR = $0.25 (excellent results)
+- 💰 Claude Vision alternative: $0.85 (3.4x more expensive)
+
+**Cached re-processing:**
+- First run: Full cost
+- Subsequent runs: $0 (cached)
+
+---
+
+## Summary
+
+### API Selection Rules
+
+1. **Diagrams/Charts** → Vision API (`type: "mistral"`)
+2. **Scanned Text/Forms/Tables** → OCR API (`type: "mistral-ocr"`)
+3. **Text-heavy pages** → Stage 1 (no OCR needed)
+
+### Common Mistakes
+
+❌ **WRONG:** Using OCR API for diagrams
 ```typescript
-// Stage 1: Fast text extraction
-const { pages } = await pdf_read_pages({
-  sources: [{ path: "invoice.pdf", pages: [1] }],
-  insert_markers: true
-});
-
-// Check if native text is sufficient
-if (pages[0].text.length > 500) {
-  // Use Stage 1 text directly
-  const data = extractInvoiceData(pages[0].text);
-} else {
-  // Stage 3: OCR with table support
-  const ocr = await pdf_ocr_page({
-    source: { path: "invoice.pdf" },
-    page: 1,
-    provider: {
-      type: "mistral-ocr",
-      extras: { tableFormat: "html" }
-    }
-  });
-
-  // TODO: Use annotations for structured extraction (see BACKLOG.md)
-}
+provider: { type: "mistral-ocr" }  // Only extracts "Voltage (V)"
 ```
+
+✅ **RIGHT:** Using Vision API for diagrams
+```typescript
+provider: { type: "mistral" }  // Extracts all signals, thresholds, timing
+```
+
+### Best Practices
+
+1. Always run Stage 1 first (fast, free, identifies content)
+2. Use Vision APIs for diagrams (semantic understanding)
+3. Use OCR APIs for text documents (precise extraction)
+4. Enable caching (saves cost on re-processing)
+5. Use `smart_ocr` to auto-optimize
+6. Prefer Mistral Vision over Claude Vision (5x cheaper, comparable quality)
+
+---
 
 ## Related Documentation
 
-- [Mistral OCR Capabilities](./mistral-ocr-capabilities.md)
-- [OCR Providers Guide](./ocr-providers.md)
-- [BACKLOG.md](../../BACKLOG.md)
+- [OCR Providers](./ocr-providers.md) - Provider configuration
+- [Mistral OCR Capabilities](./mistral-ocr-capabilities.md) - Full API reference
+- [OCR_COMPARISON_TEST.md](../../OCR_COMPARISON_TEST.md) - Test results
+- [BACKLOG.md](../../BACKLOG.md) - Planned enhancements

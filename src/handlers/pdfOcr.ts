@@ -70,6 +70,7 @@ const countImagesOnPage = async (page: pdfjsLib.PDFPageProxy): Promise<number> =
   return imageCount;
 };
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: OCR decision logic requires multiple conditions
 const decideNeedsOcr = async (
   page: pdfjsLib.PDFPageProxy,
   extractedText: string
@@ -94,8 +95,12 @@ const decideNeedsOcr = async (
     }
   }
 
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: Standard pattern for non-ASCII detection
-  const nonAsciiCount = (trimmedText.match(/[^\u0000-\u007F]/gu) || []).length;
+  // Count non-ASCII characters efficiently without creating match array
+  let nonAsciiCount = 0;
+  for (const char of trimmedText) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint !== undefined && codePoint > 127) nonAsciiCount++;
+  }
 
   if (nonAsciiCount >= SMART_OCR_NON_ASCII_MIN_COUNT) {
     const nonAsciiRatio = nonAsciiCount / textLength;

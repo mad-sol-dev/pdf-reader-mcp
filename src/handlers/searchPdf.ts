@@ -307,6 +307,11 @@ export const pdfSearch = tool()
     };
 
     if (baseOptions.useRegex) {
+      // Prevent ReDoS attacks by limiting regex query length
+      if (query.length > 100) {
+        return toolError('Regex query too long (max 100 characters)');
+      }
+
       try {
         // Validate the regex early to surface errors before processing pages
         // eslint-disable-next-line no-new

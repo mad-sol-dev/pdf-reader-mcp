@@ -1,0 +1,36 @@
+{
+  "fingerprint": "84bffaff653b71e2f447a43bcc1ba45a",
+  "pdf_path": "/home/martinm/programme/Projekte/pdf-reader-mcp/test-data/1618935.pdf",
+  "created_at": "2025-12-23T19:01:37.051Z",
+  "updated_at": "2025-12-23T19:08:59.133Z",
+  "ocr_provider": "mistral-ocr-default",
+  "pages": {
+    "2": {
+      "text": "Rahmensatz\n\n![img-0.jpeg](img-0.jpeg)\n\nSOLO 574 HYDRO (2012)\n\nCopyright ST. S.P.A.\n\n19.04.2024\n\nSeite 2 - 37",
+      "provider_hash": "{\"name\":\"mistral-ocr-default\",\"type\":\"mistral-ocr\"}",
+      "cached_at": "2025-12-23T19:08:48.250Z"
+    },
+    "5": {
+      "text": "Rahmensatz\n\n\n\n|  Bild Nr. | Anzahl | Teilenummer | Beschreibung | Hinweis | Von | Bis  |\n| --- | --- | --- | --- | --- | --- | --- |\n|  1 | 1 | 325774501/0 | Rechte Klemmhalterung |  |  |   |\n|  2 | 1 | 325774507/0 | Linke Klemmhalterung |  |  |   |\n|  3 | 2 | 325650163/0 | Verstaerkung |  |  |   |\n|  4 | 8 | 125943009/0 | Schraube |  |  |   |\n|  5 | 2 | 125943009/0 | Schraube |  |  |   |\n|  6 | 1 | 325547299/0 | Hintere Platte, Oberseite |  |  |   |\n|  7 | 1 | 112789008/0 | Schraube |  |  |   |\n|  8 | 1 | 127430554/0 | Feder |  |  | To  |\n|  8 | 1 | 127430600/0 | Feder |  | From |   |\n|  9 | 1 | 112154330/0 | Mutter |  | 01-Septem\nber-2013 |   |\n|  10 | 4 | 125943010/0 | Schraube |  |  |   |\n|  11 | 6 | 112789008/0 | Schraube |  |  |   |\n|  12 | 6 | 112521320/0 | Scheibe |  |  |   |\n|  13 | 6 | 112437503/0 | Plättchen |  |  |   |\n|  15 | 2 | 112728686/0 | Schraube |  |  |   |\n|  16 | 1 | 325109522/0 | Schutzdeckel |  |  |   |\n|  17 | 1 | 325318276/0 | Hebel |  |  |   |\n|  18 | 1 | 325785400/0 | Halter |  |  | To  |\n|  18 | 1 | 325785428/0 | Halter |  | From |   |\n|  19 | 2 | 125943010/0 | Schraube |  | 01-Septem\nber-2012 |   |\n|  20 | 1 | 325318277/0 | Hebel |  |  |   |\n|  25 | 4 | 125943009/0 | Schraube |  |  |   |\n|  26 | 2 | 325774521/0 | Bride |  |  |   |\n|  28 | 1 | 325650151/0 | Verstaerkung |  |  |   |\n|  29 | 1 | 325650153/0 | Verstaerkung |  |  |   |\n|  30 | 1 | 112789008/0 | Schraube |  |  |   |\n|  31 | 1 | 325755061/0 | Steigbügel |  |  |   |\n|  32 | 1 | 112154330/0 | Mutter |  |  |   |\n|  33 | 1 | 325774533/0 | Bride |  |  |   |\n|  34 | 1 | 125510080/1 | Bolzen |  |  | To  |\n|  34 | 1 | 125510080/2 | Bolzen |  | From |   |\n|  35 | 1 | 112154510/0 | Mutter |  | 01-Septem\nber-2015 |   |\n|  36 | 1 | 125430282/0 | Feder |  |  |   |\n|  37 | 1 | 382547071/0 | Hintere Platte, Unterseite |  |  |   |\n|  40 | 1 | 382180121/0 | Satz, Schrauben |  |  |   |\n|  41 | 1 | 325600107/0 | Schutz |  |  |   |\n\n\n\nSOLO 574 HYDRO (2012)\nCopyright ST. S.P.A.\n19.04.2024\nSeite 5 - 37",
+      "provider_hash": "{\"name\":\"mistral-ocr-default\",\"type\":\"mistral-ocr\"}",
+      "cached_at": "2025-12-23T19:01:37.051Z"
+    },
+    "6": {
+      "text": "Karosserie\n\n![img-0.jpeg](img-0.jpeg)\n\nSOLO 574 HYDRO (2012)\n\nCopyright ST. S.P.A.\n\n19.04.2024\n\nSeite 6 - 37",
+      "provider_hash": "{\"name\":\"mistral-ocr-default\",\"type\":\"mistral-ocr\"}",
+      "cached_at": "2025-12-23T19:07:11.797Z"
+    }
+  },
+  "images": {
+    "6/0": {
+      "text": "![img-0.jpeg](img-0.jpeg)",
+      "provider_hash": "{\"name\":\"mistral-ocr-default\",\"type\":\"mistral-ocr\"}",
+      "cached_at": "2025-12-23T19:08:36.474Z"
+    },
+    "2/0": {
+      "text": "![img-0.jpeg](img-0.jpeg)",
+      "provider_hash": "{\"name\":\"mistral-ocr-default\",\"type\":\"mistral-ocr\"}",
+      "cached_at": "2025-12-23T19:08:59.133Z"
+    }
+  }
+}

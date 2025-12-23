@@ -110,19 +110,16 @@ describe('MCP Server Integration', () => {
     expect(response.result?.tools?.length).toBeGreaterThan(0);
 
     const toolNames = response.result?.tools?.map((t) => t.name);
-    expect(toolNames).toContain('read_pdf');
+    expect(toolNames).toContain('pdf_read');
   });
 
-  it('should call read_pdf tool with a test PDF', async () => {
+  it('should call pdf_read tool with a test PDF', async () => {
     const testPdfPath = path.resolve(__dirname, '../fixtures/sample.pdf');
 
     const callRequest = createRequest(3, 'tools/call', {
-      name: 'read_pdf',
+      name: 'pdf_read',
       arguments: {
         sources: [{ path: testPdfPath }],
-        include_metadata: true,
-        include_page_count: true,
-        include_full_text: false,
       },
     });
 
@@ -148,10 +145,9 @@ describe('MCP Server Integration', () => {
 
   it('should handle invalid tool arguments', async () => {
     const callRequest = createRequest(4, 'tools/call', {
-      name: 'read_pdf',
+      name: 'pdf_read',
       arguments: {
-        // Missing required 'sources' field
-        include_metadata: true,
+        // Missing required 'sources' field (sources is required)
       },
     });
 

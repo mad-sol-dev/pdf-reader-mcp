@@ -1,22 +1,14 @@
 {
   "fingerprint": "fingerprint-2",
   "pdf_path": "test.pdf",
-  "created_at": "2025-12-23T15:47:39.334Z",
-  "updated_at": "2025-12-23T16:37:51.766Z",
-  "ocr_provider": "{\"type\":\"mock\"}",
+  "created_at": "2025-12-23T19:02:34.721Z",
+  "updated_at": "2025-12-23T20:29:04.815Z",
+  "ocr_provider": "mock-test",
   "pages": {
     "1": {
-      "0": "m",
-      "1": "o",
-      "2": "c",
-      "3": "k",
-      "4": "-",
-      "5": "t",
-      "6": "e",
-      "7": "s",
-      "8": "t",
-      "provider_hash": 1,
-      "cached_at": "2025-12-23T16:37:51.766Z"
+      "text": "OCR text",
+      "provider_hash": "{\"name\":\"mock-test\",\"type\":\"mock\"}",
+      "cached_at": "2025-12-23T20:29:04.815Z"
     }
   },
   "images": {}

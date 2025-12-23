@@ -1,14 +1,6 @@
 import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
-import { cacheClearArgsSchema, cacheStatsArgsSchema } from '../schemas/cache.js';
-import { clearCache, getCacheStats } from '../utils/cache.js';
-
-export const pdfCacheStats = tool()
-  .description('Inspect cache usage for text and OCR results.')
-  .input(cacheStatsArgsSchema)
-  .handler(async () => {
-    const stats = getCacheStats();
-    return [text(JSON.stringify({ stats }, null, 2))];
-  });
+import { cacheClearArgsSchema } from '../schemas/cache.js';
+import { clearCache } from '../utils/cache.js';
 
 export const pdfCacheClear = tool()
   .description('Clear text and/or OCR caches.')

@@ -1,13 +1,13 @@
 import { image, text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import { buildWarnings, extractImages } from '../pdf/extractor.js';
 import { determinePagesToProcess, getTargetPages } from '../pdf/parser.js';
-import { getImageArgsSchema } from '../schemas/getImage.js';
+import { extractImageArgsSchema } from '../schemas/extractImage.js';
 import type { ExtractedImage } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
 import { OCR_IMAGE_RECOMMENDATION } from '../utils/ocrRecommendation.js';
 import { withPdfDocument } from '../utils/pdfLifecycle.js';
 
-const logger = createLogger('GetImage');
+const logger = createLogger('ExtractImage');
 
 const buildImageMetadata = (targetImage: ExtractedImage, warnings: string[]): object => ({
   page: targetImage.page,
@@ -79,9 +79,16 @@ const fetchImage = async (
   });
 };
 
-export const pdfGetImage = tool()
-  .description('Fetch a single PDF image as base64-encoded PNG along with metadata.')
-  .input(getImageArgsSchema)
+export const pdfExtractImage = tool()
+  .description(
+    'STAGE 2: Extract image from PDF for Vision analysis\n\n' +
+      'Use AFTER Stage 1 (pdf_read) when you see [IMAGE] markers or image_indexes in the text.\n\n' +
+      'Returns base64-encoded PNG image that you can analyze with your Vision capabilities. ' +
+      'If the image contains text that Vision cannot read clearly, use Stage 3 (pdf_ocr) instead.\n\n' +
+      'Example:\n' +
+      '  pdf_extract_image({source: {path: "doc.pdf"}, page: 5, index: 0})'
+  )
+  .input(extractImageArgsSchema)
   .handler(async ({ input }) => {
     const { source, page, index } = input;
     const sourceDescription = source.path ?? source.url ?? 'unknown source';

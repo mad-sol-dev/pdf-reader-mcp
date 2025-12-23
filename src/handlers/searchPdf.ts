@@ -8,6 +8,7 @@ import { pdfSearchArgsSchema } from '../schemas/pdfSearch.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
 import type { PdfSearchHit, PdfSourceSearchResult } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
+import { buildNextStep } from '../utils/workflow.js';
 
 const logger = createLogger('PdfSearch');
 
@@ -355,5 +356,6 @@ export const pdfSearch = tool()
       return toolError(`All sources failed to search: ${errors}`);
     }
 
-    return [text(JSON.stringify({ results }, null, 2))];
+    const nextStep = buildNextStep({ stage: 'search' });
+    return [text(JSON.stringify({ results, next_step: nextStep }, null, 2))];
   });

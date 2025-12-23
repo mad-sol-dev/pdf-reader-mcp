@@ -1660,15 +1660,7 @@ var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
 };
 
 // src/schemas/pdfOcr.ts
-import {
-  bool as bool4,
-  description as description8,
-  gte as gte3,
-  int as int3,
-  num as num3,
-  object as object9,
-  optional as optional7
-} from "@sylphx/vex";
+import { bool as bool4, description as description8, gte as gte3, int as int3, num as num3, object as object9, optional as optional7 } from "@sylphx/vex";
 var pdfOcrArgsSchema = object9({
   source: pdfSourceSchema,
   page: num3(int3, gte3(1), description8("1-based page number.")),
@@ -2136,6 +2128,53 @@ var performOcr = async (base64Image, provider) => {
   throw new Error("Unsupported OCR provider configuration.");
 };
 
+// src/utils/workflow.ts
+function buildNextStep2(context) {
+  if (context.stage === "info") {
+    return {
+      suggestion: "Use pdf_read (Stage 1) to extract content, or pdf_search to find specific text.",
+      recommended_tools: ["pdf_read", "pdf_search"]
+    };
+  }
+  if (context.stage === "read") {
+    if (!context.hasText && !context.hasImages) {
+      return {
+        suggestion: "No text or images found. This may be a scanned page. Use pdf_ocr (Stage 3) to OCR the entire page.",
+        recommended_tools: ["pdf_ocr"]
+      };
+    }
+    if (context.hasImages && context.imageCount && context.imageCount > 0) {
+      return {
+        suggestion: `Found ${context.imageCount} image(s). Use pdf_extract_image (Stage 2) for diagrams/charts, or pdf_ocr (Stage 3) if images contain text.`,
+        recommended_tools: ["pdf_extract_image", "pdf_ocr"]
+      };
+    }
+    if (context.hasText) {
+      return {
+        suggestion: "Text extraction complete."
+      };
+    }
+  }
+  if (context.stage === "extract") {
+    return {
+      suggestion: "Image extracted for vision analysis. If other images contain text, use pdf_ocr (Stage 3).",
+      recommended_tools: ["pdf_ocr"]
+    };
+  }
+  if (context.stage === "ocr") {
+    return {
+      suggestion: "OCR complete. Text extracted from image."
+    };
+  }
+  if (context.stage === "search") {
+    return {
+      suggestion: "Search complete. Use pdf_read on relevant pages for full content.",
+      recommended_tools: ["pdf_read"]
+    };
+  }
+  return;
+}
+
 // src/handlers/pdfOcr.ts
 var logger14 = createLogger("PdfOcr");
 var SMART_OCR_MIN_TEXT_LENGTH = 50;
@@ -2453,12 +2492,14 @@ var pdfOcr = tool8().description(`STAGE 3: OCR for text in images
       return performPageOcr(sourceArgs, sourceDescription, page, configuredProvider, scale, smart_ocr ?? false, cache !== false, pdfDocument);
     });
     if (!result.success) {
+      const nextStep2 = buildNextStep2({ stage: "ocr" });
       return [
-        text8(JSON.stringify(result.metadata, null, 2)),
+        text8(JSON.stringify({ ...result.metadata, next_step: nextStep2 }, null, 2)),
         image2(result.imageData, "image/png")
       ];
     }
-    return [text8(JSON.stringify(result.result, null, 2))];
+    const nextStep = buildNextStep2({ stage: "ocr" });
+    return [text8(JSON.stringify({ ...result.result, next_step: nextStep }, null, 2))];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger14.error("Failed to perform OCR", { sourceDescription, page, index, error: message });
@@ -3342,7 +3383,8 @@ var pdfSearch = tool12().description(`Search for specific text patterns across P
     const errors = results.map((r) => r.error).join("; ");
     return toolError12(`All sources failed to search: ${errors}`);
   }
-  return [text12(JSON.stringify({ results }, null, 2))];
+  const nextStep = buildNextStep2({ stage: "search" });
+  return [text12(JSON.stringify({ results, next_step: nextStep }, null, 2))];
 });
 
 // src/index.ts

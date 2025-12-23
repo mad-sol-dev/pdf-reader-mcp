@@ -17,6 +17,7 @@ import { createLogger } from '../utils/logger.js';
 import type { OcrProviderOptions } from '../utils/ocr.js';
 import { getConfiguredProvider, performOcr } from '../utils/ocr.js';
 import { withPdfDocument } from '../utils/pdfLifecycle.js';
+import { buildNextStep } from '../utils/workflow.js';
 
 const logger = createLogger('PdfOcr');
 
@@ -559,14 +560,16 @@ export const pdfOcr = tool()
 
       // Handle fallback case (no provider configured)
       if (!result.success) {
+        const nextStep = buildNextStep({ stage: 'ocr' });
         return [
-          text(JSON.stringify(result.metadata, null, 2)),
+          text(JSON.stringify({ ...result.metadata, next_step: nextStep }, null, 2)),
           image(result.imageData, 'image/png'),
         ];
       }
 
       // Return OCR result
-      return [text(JSON.stringify(result.result, null, 2))];
+      const nextStep = buildNextStep({ stage: 'ocr' });
+      return [text(JSON.stringify({ ...result.result, next_step: nextStep }, null, 2))];
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('Failed to perform OCR', { sourceDescription, page, index, error: message });

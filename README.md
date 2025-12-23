@@ -55,14 +55,16 @@ We've **massively expanded** this project with advanced Vision & OCR capabilitie
 
 ## 🌟 Overview
 
+> **🍴 This is a fork** of [Sylphx/pdf-reader-mcp](https://github.com/SylphxAI/pdf-reader-mcp) with massively expanded Vision & OCR capabilities. Not published to npm - local build required.
+
 PDF Reader MCP is a **production-ready** Model Context Protocol server for AI agents that combines:
 
-1. **Fast PDF Processing** - 5-10x parallel speedup, Y-coordinate ordering
-2. **Vision API** - Analyze diagrams, charts, and technical illustrations
-3. **OCR API** - Extract text from scanned documents, forms, and tables
-4. **Smart Routing** - Automatically choose the right API for your content
+1. **Fast PDF Processing** - 5-10x parallel speedup, Y-coordinate ordering (from Sylphx)
+2. **Vision API** - Analyze diagrams, charts, and technical illustrations (enhanced)
+3. **OCR API** - Extract text from scanned documents, forms, and tables (enhanced)
+4. **Smart Routing** - Automatically choose the right API for your content (new)
 
-**Built on** the excellent foundation from [Sylphx](https://github.com/SylphxAI/pdf-reader-mcp), we've extended it with enterprise-grade Vision & OCR capabilities.
+**Built on** the excellent foundation from [Sylphx](https://github.com/SylphxAI/pdf-reader-mcp), we've extended it with enterprise-grade Vision & OCR capabilities tested on real technical documents.
 
 ---
 
@@ -105,20 +107,49 @@ PDF Reader MCP is a **production-ready** Model Context Protocol server for AI ag
 
 ## 📦 Installation
 
-### Claude Desktop
+> **Note:** This is a fork with enhanced Vision & OCR capabilities. Installation requires local build (not published to npm).
 
-Add to `claude_desktop_config.json`:
+### 1. Clone and Build
+
+```bash
+# Clone the repository
+git clone https://github.com/BadlyDrawnBoy/pdf-reader-mcp.git
+cd pdf-reader-mcp
+
+# Install dependencies
+bun install
+
+# Build the project
+bun run build
+```
+
+### 2. Claude Desktop
+
+Add to `claude_desktop_config.json` with **absolute path** to your local build:
 
 ```json
 {
   "mcpServers": {
     "pdf-reader": {
-      "command": "npx",
-      "args": ["@sylphx/pdf-reader-mcp"],
+      "command": "node",
+      "args": ["/absolute/path/to/pdf-reader-mcp/dist/index.js"],
       "cwd": "/path/to/your/documents",
       "env": {
         "MISTRAL_API_KEY": "your-mistral-api-key-here"
       }
+    }
+  }
+}
+```
+
+**Example (Linux):**
+```json
+{
+  "mcpServers": {
+    "pdf-reader": {
+      "command": "node",
+      "args": ["/home/user/projects/pdf-reader-mcp/dist/index.js"],
+      "cwd": "/home/user/documents"
     }
   }
 }
@@ -129,33 +160,37 @@ Add to `claude_desktop_config.json`:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-### Claude Code
+### 3. Claude Code
+
+Add MCP server with local path:
 
 ```bash
-claude mcp add pdf-reader -- npx @sylphx/pdf-reader-mcp
+claude mcp add pdf-reader -- node /absolute/path/to/pdf-reader-mcp/dist/index.js
 ```
 
-### Other Clients
+### 4. Other Clients
 
 <details>
 <summary><strong>VS Code / Cursor / Windsurf / Cline</strong></summary>
 
+All MCP-compatible clients require the **absolute path** to your local build:
+
 **VS Code:**
 ```bash
-code --add-mcp '{"name":"pdf-reader","command":"npx","args":["@sylphx/pdf-reader-mcp"]}'
+code --add-mcp '{"name":"pdf-reader","command":"node","args":["/absolute/path/to/pdf-reader-mcp/dist/index.js"]}'
 ```
 
 **Cursor:**
 1. Settings → MCP → Add new MCP Server
-2. Command: `npx @sylphx/pdf-reader-mcp`
+2. Command: `node /absolute/path/to/pdf-reader-mcp/dist/index.js`
 
 **Windsurf / Cline:**
 ```json
 {
   "mcpServers": {
     "pdf-reader": {
-      "command": "npx",
-      "args": ["@sylphx/pdf-reader-mcp"]
+      "command": "node",
+      "args": ["/absolute/path/to/pdf-reader-mcp/dist/index.js"]
     }
   }
 }
@@ -163,15 +198,11 @@ code --add-mcp '{"name":"pdf-reader","command":"npx","args":["@sylphx/pdf-reader
 
 </details>
 
-### Manual Installation
+### Requirements
 
-```bash
-# Quick start - zero installation
-npx @sylphx/pdf-reader-mcp
-
-# Or install globally
-npm install -g @sylphx/pdf-reader-mcp
-```
+- **Node.js** ≥ 22.0.0
+- **Bun** 1.3.x (for building)
+- **Git** (for cloning)
 
 ---
 
@@ -789,9 +820,9 @@ Enhanced features Copyright (c) 2025 Contributors
 
 ## 🔗 Links
 
-- **npm Package:** [@sylphx/pdf-reader-mcp](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp)
+- **This Fork:** [BadlyDrawnBoy/pdf-reader-mcp](https://github.com/BadlyDrawnBoy/pdf-reader-mcp) (local build only)
 - **Original Repository:** [SylphxAI/pdf-reader-mcp](https://github.com/SylphxAI/pdf-reader-mcp)
-- **Enhanced Fork:** [BadlyDrawnBoy/pdf-reader-mcp](https://github.com/BadlyDrawnBoy/pdf-reader-mcp)
+- **Original npm Package:** [@sylphx/pdf-reader-mcp](https://www.npmjs.com/package/@sylphx/pdf-reader-mcp) (without Vision/OCR enhancements)
 - **Mistral API:** [mistral.ai](https://mistral.ai)
 - **MCP Protocol:** [modelcontextprotocol.io](https://modelcontextprotocol.io)
 

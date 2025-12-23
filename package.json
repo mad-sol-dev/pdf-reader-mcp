@@ -24,12 +24,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SylphxAI/pdf-reader-mcp.git"
+    "url": "git+https://github.com/BadlyDrawnBoy/pdf-reader-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/SylphxAI/pdf-reader-mcp/issues"
+    "url": "https://github.com/BadlyDrawnBoy/pdf-reader-mcp/issues"
   },
-  "homepage": "https://github.com/SylphxAI/pdf-reader-mcp#readme",
+  "homepage": "https://github.com/BadlyDrawnBoy/pdf-reader-mcp#readme",
   "author": "Sylphx <contact@sylphx.com> (https://sylphx.com)",
   "license": "MIT",
   "keywords": [

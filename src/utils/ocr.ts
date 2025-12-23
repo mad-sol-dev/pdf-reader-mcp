@@ -327,16 +327,33 @@ const handleMistralOcrDedicated = async (
       ...(extractHeader ? { extractHeader } : {}),
       ...(extractFooter ? { extractFooter } : {}),
     });
-    const text = result.pages?.[0]?.markdown;
+    const markdown = result.pages?.[0]?.markdown;
 
-    if (!text) {
+    if (!markdown) {
       throw new Error('Mistral OCR response missing text field.');
+    }
+
+    // Extract tables and replace placeholders with actual table content
+    let finalText = markdown;
+    const tables = result.pages?.[0]?.tables;
+
+    if (tables && tables.length > 0) {
+      // Replace [tbl-X.md](tbl-X.md) placeholders with actual table content
+      tables.forEach((table, idx) => {
+        const placeholder = `[tbl-${idx}.md](tbl-${idx}.md)`;
+        // Mistral OCR returns tables with 'content' field (not 'html')
+        const tableContent =
+          (table as { content?: string; html?: string }).content ||
+          (table as { content?: string; html?: string }).html ||
+          `[Table ${idx} - no content]`;
+        finalText = finalText.replace(placeholder, `\n\n${tableContent}\n\n`);
+      });
     }
 
     // Basic response (backward compatible)
     const basicResponse: OcrResult = {
       provider: provider.name ?? 'mistral-ocr',
-      text,
+      text: finalText,
     };
 
     // Return full response if requested

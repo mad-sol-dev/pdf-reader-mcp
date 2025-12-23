@@ -142,7 +142,6 @@ const checkDiskCacheForPage = (
   sourcePath: string | undefined,
   fingerprint: string,
   page: number,
-  scale: number,
   providerKey: string,
   providerName: string,
   cacheKey: string,
@@ -151,7 +150,7 @@ const checkDiskCacheForPage = (
 ): { success: true; result: OcrResult } | undefined => {
   if (!useCache || !sourcePath) return undefined;
 
-  const diskCached = getCachedOcrPage(sourcePath, fingerprint, page, scale, providerKey);
+  const diskCached = getCachedOcrPage(sourcePath, fingerprint, page, providerKey);
   if (!diskCached) return undefined;
 
   setCachedOcrText(fingerprint, cacheKey, {
@@ -278,19 +277,11 @@ const executePageOcrAndCache = async (
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
   if (sourcePath) {
-    setCachedOcrPage(
-      sourcePath,
-      fingerprint,
-      page,
-      scale ?? 1,
-      providerKey,
-      provider.name ?? 'unknown',
-      {
-        text: ocr.text,
-        provider_hash: providerKey,
-        cached_at: new Date().toISOString(),
-      }
-    );
+    setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? 'unknown', {
+      text: ocr.text,
+      provider_hash: providerKey,
+      cached_at: new Date().toISOString(),
+    });
     logger.debug('Saved OCR result to disk cache', { page, path: sourcePath });
   }
 
@@ -363,7 +354,6 @@ const performPageOcr = async (
     source.path,
     fingerprint,
     page,
-    scale ?? 1,
     providerKey,
     provider.name ?? 'unknown',
     cacheKey,

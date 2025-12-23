@@ -33,7 +33,7 @@ import './pdf/polyfills.js';
 
 import { createServer, stdio } from '@sylphx/mcp-server-sdk';
 import { pdfCacheClear, pdfCacheStats } from './handlers/cache.js';
-import { pdfGetImage } from './handlers/getImage.js';
+import { pdfExtractImage } from './handlers/extractImage.js';
 import { pdfGetMetadata } from './handlers/getMetadata.js';
 import { pdfGetPageStats } from './handlers/getPageStats.js';
 import { pdfGetToc } from './handlers/getToc.js';
@@ -57,7 +57,7 @@ const server = createServer({
     pdf_get_page_stats: pdfGetPageStats,
     pdf_get_toc: pdfGetToc,
     pdf_list_images: pdfListImages,
-    pdf_get_image: pdfGetImage,
+    pdf_extract_image: pdfExtractImage,
     pdf_render_page: pdfRenderPage,
     pdf_ocr_page: pdfOcrPage,
     pdf_ocr_image: pdfOcrImage,

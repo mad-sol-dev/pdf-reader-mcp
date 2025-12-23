@@ -8,6 +8,7 @@ import { pdfSearchArgsSchema } from '../schemas/pdfSearch.js';
 import type { PdfSource } from '../schemas/pdfSource.js';
 import type { PdfSearchHit, PdfSourceSearchResult } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
+import { buildNextStep } from '../utils/workflow.js';
 
 const logger = createLogger('PdfSearch');
 
@@ -267,7 +268,17 @@ const processSearchSource = async (
 };
 
 export const pdfSearch = tool()
-  .description('Searches PDF pages with plain text or regex and returns match contexts.')
+  .description(
+    'Search for specific text patterns across PDF pages\n\n' +
+      'Use when you need to:\n' +
+      '- Find specific keywords, phrases, or patterns across documents\n' +
+      '- Locate where certain content appears before reading full pages\n' +
+      '- Filter large PDFs to relevant sections only\n\n' +
+      'Supports both plain text and regex patterns. Returns surrounding context for each match.\n\n' +
+      'Workflow tip: Search first to identify relevant pages, then use pdf_read on those specific pages for full content.\n\n' +
+      'Example:\n' +
+      '  pdf_search({sources: [{path: "doc.pdf"}], query: "total revenue", context_chars: 100})'
+  )
   .input(pdfSearchArgsSchema)
   /* biome-ignore lint/complexity/noExcessiveCognitiveComplexity: handler coordinates parsing, validation, and batching */
   .handler(async ({ input }) => {
@@ -345,5 +356,6 @@ export const pdfSearch = tool()
       return toolError(`All sources failed to search: ${errors}`);
     }
 
-    return [text(JSON.stringify({ results }, null, 2))];
+    const nextStep = buildNextStep({ stage: 'search' });
+    return [text(JSON.stringify({ results, next_step: nextStep }, null, 2))];
   });

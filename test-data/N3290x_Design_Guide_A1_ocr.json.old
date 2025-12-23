@@ -1,0 +1,16 @@
+{
+  "fingerprint": "85bfe922b1622347b58e7e645bf0f0be",
+  "pdf_path": "test-data/N3290x_Design_Guide_A1.pdf",
+  "created_at": "2025-12-22T23:06:09.893Z",
+  "updated_at": "2025-12-22T23:06:09.895Z",
+  "ocr_provider": "unknown",
+  "pages": {
+    "890": {
+      "text": "nuvoton\n\n[tbl-0.md](tbl-0.md)\n\n## 7.6 Power-on Sequence\n\n![img-0.jpeg](img-0.jpeg)",
+      "provider_hash": "{\"type\":\"mistral-ocr\",\"model\":\"mistral-ocr-latest\",\"extras\":{\"tableFormat\":\"markdown\"}}",
+      "cached_at": "2025-12-22T23:06:09.893Z",
+      "scale": 1.5
+    }
+  },
+  "images": {}
+}

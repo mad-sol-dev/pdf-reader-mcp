@@ -3,9 +3,9 @@
 
 import { Canvas, Image, Path2D } from '@napi-rs/canvas';
 
-// @ts-ignore - Setting globals for PDF.js compatibility
+// @ts-expect-error - Setting globals for PDF.js compatibility
 global.Canvas = Canvas;
-// @ts-ignore
+// @ts-expect-error
 global.Image = Image;
-// @ts-ignore
+// @ts-expect-error
 global.Path2D = Path2D;

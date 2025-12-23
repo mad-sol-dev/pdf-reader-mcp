@@ -88,6 +88,27 @@ const getDefaultProvider = (): OcrProviderOptions => {
   };
 };
 
+/**
+ * Gets configured OCR provider from environment variables.
+ * Returns undefined if no provider is configured (no API keys available).
+ * This is used for auto-fallback scenarios where we want to return images
+ * instead of attempting OCR when no provider is available.
+ */
+export const getConfiguredProvider = (): OcrProviderOptions | undefined => {
+  const mistralKey = process.env.MISTRAL_API_KEY;
+
+  if (mistralKey) {
+    return {
+      type: 'mistral-ocr',
+      api_key: mistralKey,
+      name: 'mistral-ocr-default',
+    };
+  }
+
+  // No API key available - return undefined for auto-fallback
+  return undefined;
+};
+
 const resolveTimeoutMs = (provider?: OcrProviderOptions): number =>
   provider?.timeout_ms && provider.timeout_ms > 0 ? provider.timeout_ms : DEFAULT_OCR_TIMEOUT_MS;
 

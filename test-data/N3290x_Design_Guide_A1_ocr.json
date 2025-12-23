@@ -1,0 +1,22 @@
+{
+  "fingerprint": "85bfe922b1622347b58e7e645bf0f0be",
+  "pdf_path": "test-data/N3290x_Design_Guide_A1.pdf",
+  "created_at": "2025-12-23T00:43:45.065Z",
+  "updated_at": "2025-12-23T01:13:03.086Z",
+  "ocr_provider": "unknown",
+  "pages": {
+    "890": {
+      "text": "[tbl-0.html](tbl-0.html)\n\n## 7.6 Power-on Sequence\n\n![img-0.jpeg](img-0.jpeg)",
+      "provider_hash": "{\"type\":\"mistral-ocr\",\"extras\":{\"tableFormat\":\"html\",\"includeFullResponse\":\"true\",\"includeImageBase64\":\"true\",\"extractHeader\":\"true\",\"extractFooter\":\"true\"}}",
+      "cached_at": "2025-12-23T00:58:20.710Z",
+      "scale": 2
+    }
+  },
+  "images": {
+    "890/1": {
+      "text": "The provided timing diagram illustrates the power-on sequence and reset behavior for a device with specific voltage and timing requirements. Here's a detailed extraction of the signal names, voltage thresholds, timing parameters, and labels:\n\n### Signal Names:\n1. **3.3V IO Power**\n2. **1.8V Core Power**\n3. **VDD33** (3.3V Supply)\n4. **VDD33/2** (Half of 3.3V Supply)\n5. **RESET** (External Reset)\n6. **Internal RESET**\n\n### Voltage Thresholds:\n1. **3.3V IO Power (Final Level):**\n   - Nominal Voltage: 3.3V\n\n2. **1.8V Core Power (Final Level):**\n   - Nominal Voltage: 1.8V\n\n3. **VDD33/2:**\n   - Threshold Voltage: 1.62V (Half of 3.3V is approximately 1.65V, but explicitly marked as 1.62V)\n\n### Timing Parameters:\n1. **More than 4T (where T is XTAL cycle):**\n   - Initial ramp-up period before reaching VDD33/2 (1.62V)\n\n2. **75ms:**\n   - Duration from reaching valid power-on setting value to the release of internal reset\n\n### Labels and Annotations:\n1. **Valid power on setting value:**\n   - Time point when both 3.3V IO Power and 1.8V Core Power reach acceptable levels (crossing VDD33/2 threshold).\n\n2. **Internal RESET:**\n   - Dashed magenta line indicating the internal reset signal going inactive after the 75ms period post valid power setting.\n\n3. **RESET:**\n   - Red dashed line showing the external reset signal behavior, de-asserting after the power supplies are stable.\n\n### Summary of Timing Events:\n- **Initial Ramp-Up (3.3V IO Power and 1.8V Core Power):**\n  - Both power supplies start ramping up, with 3.3V IO Power reaching 1.62V before the specified time (more than 4T).\n\n- **Valid Power Setting:**\n  - Occurs when the 3.3V IO Power and 1.8V Core Power have reached their valid operational levels (crossing the VDD33/2 threshold).\n\n- **Reset Timing:**\n  - External RESET remains active until valid power settings are achieved.\n  - Internal RESET is held low for 75ms after valid power-on setting value is reached, then transitions high (inactive).\n\nThis detailed extraction provides a comprehensive understanding of the power-on and reset timing characteristics depicted in the diagram.",
+      "provider_hash": "{\"type\":\"mistral\",\"extras\":{\"prompt\":\"Analyze this timing diagram. Extract all signal names, voltage thresholds, timing parameters, and labels. Be precise and comprehensive.\"}}",
+      "cached_at": "2025-12-23T01:13:03.085Z"
+    }
+  }
+}

@@ -26,6 +26,82 @@
   - Images were not being extracted for marker insertion
   - Now extracts images when EITHER parameter is enabled
 
+## 2.2.0 (2025-12-23)
+
+### ✨ Features
+
+- **Vision API Support** — Analyze technical diagrams, charts, and illustrations
+  - Mistral Vision API integration (`type: "mistral"`) for semantic understanding
+  - Claude Vision API support for highest accuracy analysis
+  - Custom prompt support for guided diagram analysis
+  - Persistent disk cache for Vision API results
+  - 5x cheaper than Claude Vision with comparable accuracy
+  - Tested on real technical diagrams (timing diagrams, circuit schematics)
+
+- **Enhanced Mistral OCR** — Full response structure with rich metadata
+  - Extended `OcrResult` interface with `pages`, `model`, and `usage_info` fields
+  - `pages` array includes images, tables, hyperlinks, dimensions per page
+  - `MistralOcrImage` with bbox, width, height, optional base64
+  - `MistralOcrTable` with HTML output and bbox
+  - `MistralOcrUsageInfo` with token counts (prompt, completion, total)
+  - Opt-in via `includeFullResponse: "true"` parameter (backward compatible)
+  - All extras preserved through handler chain using spread operator
+
+- **Smart OCR Decision** — Intelligent OCR skipping for cost optimization
+  - Automatically skip OCR when native text extraction is sufficient
+  - Configurable decision heuristics (text length, non-ASCII ratio, image-to-text ratio)
+  - Response includes `skipped: true` and `reason` when OCR is bypassed
+  - Saves API costs on large documents with mixed content
+  - Enable via `smart_ocr: true` parameter
+
+- **Three-Stage OCR Workflow** — Optimized workflow for technical documents
+  - Stage 1: Text extraction with `[IMAGE]` and `[TABLE]` markers
+  - Stage 2: Vision API for diagrams and charts (semantic understanding)
+  - Stage 3: OCR API for scanned text and tables (structured extraction)
+  - Clear API selection strategy documented with real test results
+  - Cost-effective routing: Vision for diagrams, OCR for text
+
+### 🐛 Bug Fixes
+
+- **OCR:** parse boolean extras from strings ([75a2cea](https://github.com/BadlyDrawnBoy/pdf-reader-mcp/commit/75a2cea))
+  - Added `parseBool()` helper function to handle MCP schema string constraints
+  - Supports both boolean and string inputs for `includeFullResponse`, `includeImageBase64`, `extractHeader`, `extractFooter`
+  - Fixes validation error "Expected string" when passing boolean values
+
+- **Handlers:** preserve full OCR response structure
+  - Fixed `src/handlers/ocrPage.ts` (line 240) to use spread operator `...ocr`
+  - Fixed `src/handlers/ocrImage.ts` (line 124) to use spread operator `...ocr`
+  - Ensures `pages`, `model`, and `usage_info` are preserved in responses
+  - Previously only returned `text` and `provider` fields
+
+### 📚 Documentation
+
+- **Complete documentation overhaul** for v2.2.0
+  - Complete README.md rewrite with Vision vs OCR distinction throughout
+  - Updated docs/guide/getting-started.md with Mistral examples and API selection guide
+  - Complete docs/guide/index.md rewrite with v2.2.0 feature highlights
+  - Created OCR_COMPARISON_TEST.md with real test results (Page 890 timing diagram)
+  - Rewrote docs/guide/three-stage-ocr-workflow.md with Vision API examples
+  - Updated docs/guide/ocr-providers.md with built-in provider documentation
+  - Created docs/guide/mistral-ocr-capabilities.md for full response structure
+  - Created docs/DOCUMENTATION_AUDIT.md for systematic documentation tracking
+  - Added docs/sessions/2025-12-23-vision-vs-ocr-api-testing.md session log
+  - Credited @sylphx for solid foundation while highlighting massive expansions
+
+### 🎯 Critical Insights
+
+- **Vision APIs Required for Diagrams** — OCR APIs fail on technical diagrams
+  - Test results: Mistral Vision extracted 6/6 signals, Mistral OCR only 1/6
+  - OCR API optimized for text documents (invoices, forms, tables)
+  - Vision API required for semantic understanding (diagrams, charts, illustrations)
+  - Clear decision tree documented in all guides
+
+- **Cost Analysis** — Mistral Vision 5x cheaper than Claude Vision
+  - Mistral Vision: ~$0.003 per image (excellent quality)
+  - Claude Vision: ~$0.015 per image (excellent quality)
+  - Mistral OCR: ~$0.002 per page (excellent for text)
+  - 100-page technical manual: $0.25 (right approach) vs $0.85 (Claude Vision only)
+
 ## 2.1.0 (2025-12-17)
 
 ### ✨ Features

@@ -254,22 +254,18 @@ const handleMistralOcrDedicated = async (
     provider.extras && typeof provider.extras['tableFormat'] === 'string'
       ? provider.extras['tableFormat']
       : 'markdown';
-  const includeFullResponse =
-    provider.extras && typeof provider.extras['includeFullResponse'] === 'boolean'
-      ? provider.extras['includeFullResponse']
-      : false;
-  const includeImageBase64 =
-    provider.extras && typeof provider.extras['includeImageBase64'] === 'boolean'
-      ? provider.extras['includeImageBase64']
-      : false;
-  const extractHeader =
-    provider.extras && typeof provider.extras['extractHeader'] === 'boolean'
-      ? provider.extras['extractHeader']
-      : false;
-  const extractFooter =
-    provider.extras && typeof provider.extras['extractFooter'] === 'boolean'
-      ? provider.extras['extractFooter']
-      : false;
+
+  // Helper to parse boolean from string or boolean
+  const parseBool = (value: unknown): boolean => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return false;
+  };
+
+  const includeFullResponse = parseBool(provider.extras?.['includeFullResponse']);
+  const includeImageBase64 = parseBool(provider.extras?.['includeImageBase64']);
+  const extractHeader = parseBool(provider.extras?.['extractHeader']);
+  const extractFooter = parseBool(provider.extras?.['extractFooter']);
 
   let uploadedId: string | undefined;
 

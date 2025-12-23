@@ -271,8 +271,7 @@ const executePageOcrAndCache = async (
   sourcePath: string | undefined,
   source: string
 ): Promise<{ success: true; result: OcrResult }> => {
-  const pdfPage = await pdfDocument.getPage(page);
-  const { imageData } = await renderPageToPng(pdfPage, scale);
+  const { data: imageData } = await renderPageToPng(pdfDocument, page, scale ?? 1);
   const ocr = await performOcr(imageData, provider);
 
   // Save to caches
@@ -330,8 +329,7 @@ const performPageOcr = async (
   // Check if provider is available
   if (!provider) {
     logger.info('No OCR provider configured, returning rendered page image', { page });
-    const pdfPage = await pdfDocument.getPage(page);
-    const { imageData } = await renderPageToPng(pdfPage, scale);
+    const { data: imageData } = await renderPageToPng(pdfDocument, page, scale ?? 1);
 
     return {
       success: false,

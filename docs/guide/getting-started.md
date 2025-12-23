@@ -6,11 +6,30 @@ The PDF Reader MCP server ships a focused toolkit of specialized tools instead o
 
 1. **Probe the document** with `pdf_get_metadata` to learn page counts, page labels, and whether a TOC exists.
 2. **Map the structure** using `pdf_get_toc` and `pdf_get_page_stats` to find text-heavy or image-heavy sections before pulling pages.
-3. **Extract content** with `pdf_read_pages` (text), `pdf_search` (keyword/regex), `pdf_render_page` (raster), or `pdf_get_image` (embedded image).
-4. **Run OCR when needed** via `pdf_ocr_page` or `pdf_ocr_image`, leaning on built-in caches for repeat calls.
+3. **Extract content** with `pdf_read_pages` (text with `[IMAGE]` and `[TABLE]` markers), `pdf_search` (keyword/regex), `pdf_render_page` (raster), or `pdf_get_image` (embedded image).
+4. **Run Vision/OCR when needed**:
+   - **Diagrams/Charts** → Use Vision API (`type: "mistral"` or Claude Vision)
+   - **Scanned Text/Tables** → Use OCR API (`type: "mistral-ocr"`)
 5. **Inspect or reset caches** with `pdf_cache_stats` and `pdf_cache_clear`.
 
+> **New in v2.2.0:** Vision API support for diagrams, enhanced Mistral OCR with full response structure (images, tables, hyperlinks), and smart OCR decision. See the [Three-Stage OCR Workflow](./three-stage-ocr-workflow.md) for complete examples.
+
 > Looking for design rationale? See the [Design Philosophy](../design/index.md#design-philosophy) page for how these tools align with the core principles.
+
+## Vision vs OCR APIs 🆕
+
+**Critical distinction for accurate results:**
+
+| Content Type | API to Use | Provider Type | Best For |
+|--------------|------------|---------------|----------|
+| **Diagrams, Charts, Technical Illustrations** | **Vision API** | `"mistral"` or Claude | Semantic understanding, extracting signal names, labels, relationships |
+| **Scanned Documents, Forms, Tables** | **OCR API** | `"mistral-ocr"` | Text extraction, structured data (HTML tables), headers/footers |
+
+**Quick decision:**
+- Does it have **graphical elements** (lines, shapes, plots)? → **Vision API**
+- Is it **mostly text** (scanned pages, invoices)? → **OCR API**
+
+See [OCR_COMPARISON_TEST.md](../../OCR_COMPARISON_TEST.md) for real test results comparing both APIs.
 
 ## Tool-by-tool examples
 
@@ -186,23 +205,48 @@ Responds with page dimensions, scale, fingerprint, and a PNG part for the render
 
 **`pdf_ocr_page` — OCR a rendered page with caching**
 
+**For scanned text documents (OCR API):**
+
 ```json
 {
-  "source": { "path": "./docs/report.pdf" },
-  "page": 5,
-  "scale": 1.5,
+  "source": { "path": "./docs/scanned-invoice.pdf" },
+  "page": 1,
   "provider": {
-    "type": "http",
-    "endpoint": "https://example-ocr.internal/v1/ocr",
-    "api_key": "sk-ocr-demo",
-    "model": "vision-large",
-    "language": "en"
+    "type": "mistral-ocr",
+    "extras": {
+      "tableFormat": "html",
+      "includeFullResponse": "true",
+      "extractHeader": "true",
+      "extractFooter": "true"
+    }
   },
   "cache": true
 }
 ```
 
-Outputs OCR `text`, provider info, whether it came `from_cache`, and page identifiers. Use `pdf_ocr_image` similarly when you already know the image index.
+**For diagrams/charts (Vision API via `pdf_ocr_image`):**
+
+```json
+{
+  "source": { "path": "./docs/technical-doc.pdf" },
+  "page": 5,
+  "index": 0,
+  "provider": {
+    "type": "mistral",
+    "extras": {
+      "prompt": "Analyze this timing diagram. Extract all signal names, voltage thresholds, and timing parameters."
+    }
+  },
+  "cache": true
+}
+```
+
+Outputs OCR `text`, provider info, whether it came `from_cache`, and page identifiers. With `includeFullResponse: "true"`, you also get `pages` array with images, tables, hyperlinks, dimensions, and `usage_info`.
+
+> **See also:**
+> - [OCR Providers Guide](./ocr-providers.md) — Complete provider reference (mistral, mistral-ocr, http, mock)
+> - [Three-Stage OCR Workflow](./three-stage-ocr-workflow.md) — Recommended workflow combining text extraction, Vision, and OCR
+> - [Mistral OCR Capabilities](./mistral-ocr-capabilities.md) — Full response structure and table format options
 
 **Smart OCR — intelligent OCR decision**
 

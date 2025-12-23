@@ -3,14 +3,26 @@
 // Filter out DOMMatrix polyfill warnings from stdout (breaks MCP JSON)
 // These warnings come from @napi-rs/canvas native module
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = ((chunk: any, encoding?: any, callback?: any) => {
+process.stdout.write = ((
+  chunk: string | Uint8Array,
+  encodingOrCallback?: BufferEncoding | ((error?: Error) => void),
+  callback?: (error?: Error) => void
+) => {
   const str = chunk.toString();
   // Skip DOMMatrix warnings - redirect to stderr instead
   if (str.includes('Cannot polyfill') || str.includes('DOMMatrix')) {
-    process.stderr.write(chunk, encoding as BufferEncoding, callback);
+    if (typeof encodingOrCallback === 'function') {
+      process.stderr.write(chunk, encodingOrCallback);
+    } else {
+      process.stderr.write(chunk, encodingOrCallback as BufferEncoding, callback);
+    }
     return true;
   }
-  return originalStdoutWrite(chunk, encoding, callback);
+
+  if (typeof encodingOrCallback === 'function') {
+    return originalStdoutWrite(chunk, encodingOrCallback);
+  }
+  return originalStdoutWrite(chunk, encodingOrCallback, callback);
 }) as typeof process.stdout.write;
 
 // Load environment variables from .env file
@@ -28,6 +40,7 @@ import { pdfGetToc } from './handlers/getToc.js';
 import { pdfListImages } from './handlers/listImages.js';
 import { pdfOcrImage } from './handlers/ocrImage.js';
 import { pdfOcrPage } from './handlers/ocrPage.js';
+import { pdfInfo } from './handlers/pdfInfo.js';
 import { pdfReadPages } from './handlers/readPages.js';
 import { readPdf } from './handlers/readPdf.js';
 import { pdfRenderPage } from './handlers/renderPage.js';
@@ -39,6 +52,7 @@ const server = createServer({
   instructions:
     'PDF toolkit for MCP clients: retrieve metadata, compute page statistics, inspect TOCs, read structured pages, search text, extract text/images, rasterize pages, perform OCR with caching, and manage caches (read_pdf maintained for compatibility).',
   tools: {
+    pdf_info: pdfInfo,
     pdf_get_metadata: pdfGetMetadata,
     pdf_get_page_stats: pdfGetPageStats,
     pdf_get_toc: pdfGetToc,

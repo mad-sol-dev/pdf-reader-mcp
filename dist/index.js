@@ -2922,305 +2922,22 @@ var pdfRead = tool9().description(`STAGE 1: Extract text from PDF pages
   return [text9(JSON.stringify({ results }, null, 2))];
 });
 
-// src/handlers/renderPage.ts
+// src/handlers/readPdf.ts
 import { image as image3, text as text10, tool as tool10, toolError as toolError10 } from "@sylphx/mcp-server-sdk";
 
-// src/schemas/renderPage.ts
-import { description as description10, gte as gte5, num as num5, object as object11, optional as optional9 } from "@sylphx/vex";
-var renderPageArgsSchema = object11({
-  source: pdfSourceSchema,
-  page: num5(gte5(1), description10("1-based page number to render.")),
-  scale: optional9(num5(gte5(0.1), description10("Rendering scale factor (1.0 = 100%).")))
-});
-
-// src/handlers/renderPage.ts
-var logger16 = createLogger("RenderPage");
-var renderTargetPage = async (source, sourceDescription, page, scale) => {
-  return withPdfDocument(source, sourceDescription, async (pdfDocument) => {
-    const totalPages = pdfDocument.numPages;
-    if (page < 1 || page > totalPages) {
-      throw new Error(`Requested page ${page} is out of bounds (1-${totalPages}).`);
-    }
-    const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
-    const rendered = await renderPageToPng(pdfDocument, page, scale ?? 1.5);
-    return {
-      metadata: {
-        page,
-        width: rendered.width,
-        height: rendered.height,
-        scale: rendered.scale,
-        fingerprint,
-        recommendation: OCR_IMAGE_RECOMMENDATION
-      },
-      imageData: rendered.data
-    };
-  });
-};
-var pdfRenderPage = tool10().description("Rasterize a PDF page to PNG and return metadata plus base64 image content.").input(renderPageArgsSchema).handler(async ({ input }) => {
-  const { source, page, scale } = input;
-  const sourceDescription = source.path ?? source.url ?? "unknown source";
-  const normalizedSource = {
-    ...source.path ? { path: source.path } : {},
-    ...source.url ? { url: source.url } : {}
-  };
-  try {
-    const result = await renderTargetPage(normalizedSource, sourceDescription, page, scale);
-    return [text10(JSON.stringify(result.metadata, null, 2)), image3(result.imageData, "image/png")];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger16.error("Failed to render page", { sourceDescription, page, error: message });
-    return toolError10(`Failed to render page from ${sourceDescription}. Reason: ${message}`);
-  }
-});
-
-// src/handlers/searchPdf.ts
-import { text as text11, tool as tool11, toolError as toolError11 } from "@sylphx/mcp-server-sdk";
-
-// src/schemas/pdfSearch.ts
-import {
-  array as array8,
-  bool as bool6,
-  description as description11,
-  gte as gte6,
-  int as int5,
-  min as min2,
-  num as num6,
-  object as object12,
-  optional as optional10,
-  str as str5
-} from "@sylphx/vex";
-var pdfSearchArgsSchema = object12({
-  sources: array8(pdfSourceSchema),
-  query: str5(min2(1), description11("Plain text or regular expression to search for within pages.")),
-  use_regex: optional10(bool6(description11("Treat the query as a regular expression."))),
-  case_sensitive: optional10(bool6(description11("Enable case sensitive matching."))),
-  context_chars: optional10(num6(int5, gte6(0), description11("Number of characters to include before/after each match."))),
-  max_hits: optional10(num6(int5, gte6(1), description11("Maximum number of matches to return across all pages."))),
-  max_chars_per_page: optional10(num6(int5, gte6(1), description11("Truncate each page before searching to control payload size."))),
-  preserve_whitespace: optional10(bool6(description11("Preserve original whitespace when building text."))),
-  trim_lines: optional10(bool6(description11("Trim leading/trailing whitespace for each text line."))),
-  allow_full_document: optional10(bool6(description11("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
-});
-
-// src/handlers/searchPdf.ts
-var logger17 = createLogger("PdfSearch");
-var findPlainMatches = (textToSearch, query, options, remaining) => {
-  const matches = [];
-  const haystack = options.caseSensitive ? textToSearch : textToSearch.toLowerCase();
-  const needle = options.caseSensitive ? query : query.toLowerCase();
-  let startIndex = 0;
-  while (matches.length < remaining) {
-    const idx = haystack.indexOf(needle, startIndex);
-    if (idx === -1)
-      break;
-    matches.push({ match: textToSearch.slice(idx, idx + query.length), index: idx });
-    startIndex = idx + query.length;
-  }
-  return matches;
-};
-var findRegexMatches = (textToSearch, query, options, remaining) => {
-  const flags = options.caseSensitive ? "g" : "gi";
-  const regex = new RegExp(query, flags);
-  const matches = [];
-  let match = regex.exec(textToSearch);
-  while (match !== null && matches.length < remaining) {
-    const matchText = match[0];
-    const index = match.index;
-    matches.push({ match: matchText, index });
-    if (matchText.length === 0) {
-      regex.lastIndex += 1;
-    }
-    match = regex.exec(textToSearch);
-  }
-  return matches;
-};
-var buildContextSegments = (textContent, index, length, contextChars) => {
-  const beforeStart = Math.max(0, index - contextChars);
-  const before = textContent.slice(beforeStart, index);
-  const afterEnd = Math.min(textContent.length, index + length + contextChars);
-  const after = textContent.slice(index + length, afterEnd);
-  return {
-    context_before: before,
-    context_after: after
-  };
-};
-var getPageLabelsSafe2 = async (pdfDocument, sourceDescription) => {
-  try {
-    return await pdfDocument.getPageLabels();
-  } catch (labelError) {
-    const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger17.warn("Error retrieving page labels", { sourceDescription, error: message });
-  }
-  return null;
-};
-var collectPageHitData = async (pdfDocument, pageNum, sourceDescription, options) => {
-  const { items } = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
-  return buildNormalizedPageText(items, {
-    preserveWhitespace: options.preserveWhitespace,
-    trimLines: options.trimLines,
-    ...options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}
-  });
-};
-var buildPageHits = (normalizedText, pageNum, pageLabels, options, remaining) => {
-  const matches = options.useRegex ? findRegexMatches(normalizedText.text ?? "", options.query, options, remaining) : findPlainMatches(normalizedText.text ?? "", options.query, options, remaining);
-  return matches.map((match) => {
-    const segments = buildContextSegments(normalizedText.text ?? "", match.index, match.match.length, options.contextChars);
-    return {
-      page_number: pageNum,
-      page_index: pageNum - 1,
-      page_label: pageLabels?.[pageNum - 1] ?? null,
-      match: match.match,
-      ...segments
-    };
-  });
-};
-var collectPageHits = async (pdfDocument, pagesToProcess, pageLabels, sourceDescription, options) => {
-  const hits = [];
-  const truncatedPages = [];
-  for (const pageNum of pagesToProcess) {
-    if (hits.length >= options.maxHits) {
-      break;
-    }
-    const normalized = await collectPageHitData(pdfDocument, pageNum, sourceDescription, options);
-    if (normalized.truncated) {
-      truncatedPages.push(pageNum);
-    }
-    if (!normalized.text) {
-      continue;
-    }
-    const remaining = options.maxHits - hits.length;
-    const pageHits = buildPageHits(normalized, pageNum, pageLabels, options, remaining);
-    hits.push(...pageHits);
-  }
-  return { hits, truncatedPages };
-};
-var destroyPdfDocument2 = async (pdfDocument, sourceDescription) => {
-  if (!pdfDocument || typeof pdfDocument.destroy !== "function") {
-    return;
-  }
-  try {
-    await pdfDocument.destroy();
-  } catch (destroyError) {
-    const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger17.warn("Error destroying PDF document", { sourceDescription, error: message });
-  }
-};
-var processSearchSource = async (source, sourceDescription, options, allowFullDocument) => {
-  let pdfDocument = null;
-  let result = { source: sourceDescription, success: false };
-  try {
-    const targetPages = getTargetPages(source.pages, sourceDescription);
-    const loadArgs = {
-      ...source.path ? { path: source.path } : {},
-      ...source.url ? { url: source.url } : {}
-    };
-    pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
-    const totalPages = pdfDocument.numPages;
-    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(targetPages, totalPages, true, {
-      allowFullDocument
-    });
-    const pageLabels = await getPageLabelsSafe2(pdfDocument, sourceDescription);
-    const { hits, truncatedPages } = await collectPageHits(pdfDocument, pagesToProcess, pageLabels, sourceDescription, options);
-    const warnings = [
-      ...rangeWarnings ?? [],
-      ...buildWarnings(invalidPages, totalPages),
-      ...guardWarning ? [guardWarning] : []
-    ];
-    result = {
-      source: sourceDescription,
-      success: true,
-      data: {
-        hits,
-        total_hits: hits.length,
-        ...warnings.length > 0 ? { warnings } : {},
-        ...truncatedPages.length > 0 ? { truncated_pages: truncatedPages } : {}
-      }
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    result = {
-      source: sourceDescription,
-      success: false,
-      error: `Failed to search ${sourceDescription}. Reason: ${message}`
-    };
-  } finally {
-    await destroyPdfDocument2(pdfDocument, sourceDescription);
-  }
-  return result;
-};
-var pdfSearch = tool11().description("Searches PDF pages with plain text or regex and returns match contexts.").input(pdfSearchArgsSchema).handler(async ({ input }) => {
-  const {
-    sources,
-    query,
-    use_regex,
-    case_sensitive,
-    context_chars,
-    max_hits,
-    max_chars_per_page,
-    preserve_whitespace,
-    trim_lines,
-    allow_full_document
-  } = input;
-  const baseOptions = {
-    query,
-    useRegex: use_regex ?? false,
-    caseSensitive: case_sensitive ?? false,
-    contextChars: context_chars ?? 60,
-    maxHits: max_hits ?? 20,
-    preserveWhitespace: preserve_whitespace ?? false,
-    trimLines: trim_lines ?? true,
-    ...max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}
-  };
-  if (baseOptions.useRegex) {
-    try {
-      new RegExp(query);
-    } catch (regexError) {
-      const message = regexError instanceof Error ? regexError.message : String(regexError);
-      return toolError11(`Invalid regular expression: ${message}`);
-    }
-  }
-  const MAX_CONCURRENT_SOURCES2 = 3;
-  const results = [];
-  let remainingHits = baseOptions.maxHits;
-  for (let i = 0;i < sources.length; i += MAX_CONCURRENT_SOURCES2) {
-    const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES2);
-    const batchResults = await Promise.all(batch.map((source) => {
-      const sourceDescription = source.path ?? source.url ?? "unknown source";
-      return processSearchSource(source, sourceDescription, {
-        ...baseOptions,
-        maxHits: remainingHits
-      }, allow_full_document ?? false);
-    }));
-    results.push(...batchResults);
-    const hitsFound = batchResults.reduce((total, result) => total + (result.data?.total_hits ?? 0), 0);
-    remainingHits = Math.max(0, remainingHits - hitsFound);
-    if (remainingHits === 0) {
-      break;
-    }
-  }
-  if (results.every((r) => !r.success)) {
-    const errors = results.map((r) => r.error).join("; ");
-    return toolError11(`All sources failed to search: ${errors}`);
-  }
-  return [text11(JSON.stringify({ results }, null, 2))];
-});
-
-// src/handlers/readPdf.ts
-import { image as image4, text as text12, tool as tool12, toolError as toolError12 } from "@sylphx/mcp-server-sdk";
-
 // src/schemas/readPdf.ts
-import { array as array9, bool as bool7, description as description12, object as object13, optional as optional11 } from "@sylphx/vex";
-var readPdfArgsSchema = object13({
-  sources: array9(pdfSourceSchema),
-  include_full_text: optional11(bool7(description12("Include the full text content of each PDF (only if 'pages' is not specified for that source)."))),
-  include_metadata: optional11(bool7(description12("Include metadata and info objects for each PDF."))),
-  include_page_count: optional11(bool7(description12("Include the total number of pages for each PDF."))),
-  include_images: optional11(bool7(description12("Extract and include embedded images from the PDF pages as base64-encoded data."))),
-  allow_full_document: optional11(bool7(description12("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+import { array as array8, bool as bool6, description as description10, object as object11, optional as optional9 } from "@sylphx/vex";
+var readPdfArgsSchema = object11({
+  sources: array8(pdfSourceSchema),
+  include_full_text: optional9(bool6(description10("Include the full text content of each PDF (only if 'pages' is not specified for that source)."))),
+  include_metadata: optional9(bool6(description10("Include metadata and info objects for each PDF."))),
+  include_page_count: optional9(bool6(description10("Include the total number of pages for each PDF."))),
+  include_images: optional9(bool6(description10("Extract and include embedded images from the PDF pages as base64-encoded data."))),
+  allow_full_document: optional9(bool6(description10("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
 });
 
 // src/handlers/readPdf.ts
-var logger18 = createLogger("ReadPdf");
+var logger16 = createLogger("ReadPdf");
 var processSingleSource = async (source, options) => {
   const MAX_CONCURRENT_PAGES = 5;
   const sourceDescription = source.path ?? source.url ?? "unknown source";
@@ -3299,13 +3016,13 @@ var processSingleSource = async (source, options) => {
         await pdfDocument.destroy();
       } catch (destroyError) {
         const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-        logger18.warn("Error destroying PDF document", { sourceDescription, error: message });
+        logger16.warn("Error destroying PDF document", { sourceDescription, error: message });
       }
     }
   }
   return individualResult;
 };
-var readPdf = tool12().description("Reads content/metadata/images from one or more PDFs (local/URL). Each source can specify pages to extract.").input(readPdfArgsSchema).handler(async ({ input }) => {
+var readPdf = tool10().description("Reads content/metadata/images from one or more PDFs (local/URL). Each source can specify pages to extract.").input(readPdfArgsSchema).handler(async ({ input }) => {
   const {
     sources,
     include_full_text,
@@ -3331,7 +3048,7 @@ var readPdf = tool12().description("Reads content/metadata/images from one or mo
   const allFailed = results.every((r) => !r.success);
   if (allFailed) {
     const errorMessages = results.map((r) => r.error).join("; ");
-    return toolError12(`All PDF sources failed to process: ${errorMessages}`);
+    return toolError10(`All PDF sources failed to process: ${errorMessages}`);
   }
   const content = [];
   const resultsForJson = results.map((result) => {
@@ -3351,21 +3068,316 @@ var readPdf = tool12().description("Reads content/metadata/images from one or mo
     }
     return result;
   });
-  content.push(text12(JSON.stringify({ results: resultsForJson }, null, 2)));
+  content.push(text10(JSON.stringify({ results: resultsForJson }, null, 2)));
   for (const result of results) {
     if (!result.success || !result.data?.page_contents)
       continue;
     for (const pageContent of result.data.page_contents) {
       for (const item of pageContent.items) {
         if (item.type === "text" && item.textContent) {
-          content.push(text12(item.textContent));
+          content.push(text10(item.textContent));
         } else if (item.type === "image" && item.imageData) {
-          content.push(image4(item.imageData.data, "image/png"));
+          content.push(image3(item.imageData.data, "image/png"));
         }
       }
     }
   }
   return content;
+});
+
+// src/handlers/renderPage.ts
+import { image as image4, text as text11, tool as tool11, toolError as toolError11 } from "@sylphx/mcp-server-sdk";
+
+// src/schemas/renderPage.ts
+import { description as description11, gte as gte5, num as num5, object as object12, optional as optional10 } from "@sylphx/vex";
+var renderPageArgsSchema = object12({
+  source: pdfSourceSchema,
+  page: num5(gte5(1), description11("1-based page number to render.")),
+  scale: optional10(num5(gte5(0.1), description11("Rendering scale factor (1.0 = 100%).")))
+});
+
+// src/handlers/renderPage.ts
+var logger17 = createLogger("RenderPage");
+var renderTargetPage = async (source, sourceDescription, page, scale) => {
+  return withPdfDocument(source, sourceDescription, async (pdfDocument) => {
+    const totalPages = pdfDocument.numPages;
+    if (page < 1 || page > totalPages) {
+      throw new Error(`Requested page ${page} is out of bounds (1-${totalPages}).`);
+    }
+    const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
+    const rendered = await renderPageToPng(pdfDocument, page, scale ?? 1.5);
+    return {
+      metadata: {
+        page,
+        width: rendered.width,
+        height: rendered.height,
+        scale: rendered.scale,
+        fingerprint,
+        recommendation: OCR_IMAGE_RECOMMENDATION
+      },
+      imageData: rendered.data
+    };
+  });
+};
+var pdfRenderPage = tool11().description("Rasterize a PDF page to PNG and return metadata plus base64 image content.").input(renderPageArgsSchema).handler(async ({ input }) => {
+  const { source, page, scale } = input;
+  const sourceDescription = source.path ?? source.url ?? "unknown source";
+  const normalizedSource = {
+    ...source.path ? { path: source.path } : {},
+    ...source.url ? { url: source.url } : {}
+  };
+  try {
+    const result = await renderTargetPage(normalizedSource, sourceDescription, page, scale);
+    return [text11(JSON.stringify(result.metadata, null, 2)), image4(result.imageData, "image/png")];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger17.error("Failed to render page", { sourceDescription, page, error: message });
+    return toolError11(`Failed to render page from ${sourceDescription}. Reason: ${message}`);
+  }
+});
+
+// src/handlers/searchPdf.ts
+import { text as text12, tool as tool12, toolError as toolError12 } from "@sylphx/mcp-server-sdk";
+
+// src/schemas/pdfSearch.ts
+import {
+  array as array9,
+  bool as bool7,
+  description as description12,
+  gte as gte6,
+  int as int5,
+  min as min2,
+  num as num6,
+  object as object13,
+  optional as optional11,
+  str as str5
+} from "@sylphx/vex";
+var pdfSearchArgsSchema = object13({
+  sources: array9(pdfSourceSchema),
+  query: str5(min2(1), description12("Plain text or regular expression to search for within pages.")),
+  use_regex: optional11(bool7(description12("Treat the query as a regular expression."))),
+  case_sensitive: optional11(bool7(description12("Enable case sensitive matching."))),
+  context_chars: optional11(num6(int5, gte6(0), description12("Number of characters to include before/after each match."))),
+  max_hits: optional11(num6(int5, gte6(1), description12("Maximum number of matches to return across all pages."))),
+  max_chars_per_page: optional11(num6(int5, gte6(1), description12("Truncate each page before searching to control payload size."))),
+  preserve_whitespace: optional11(bool7(description12("Preserve original whitespace when building text."))),
+  trim_lines: optional11(bool7(description12("Trim leading/trailing whitespace for each text line."))),
+  allow_full_document: optional11(bool7(description12("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+});
+
+// src/handlers/searchPdf.ts
+var logger18 = createLogger("PdfSearch");
+var findPlainMatches = (textToSearch, query, options, remaining) => {
+  const matches = [];
+  const haystack = options.caseSensitive ? textToSearch : textToSearch.toLowerCase();
+  const needle = options.caseSensitive ? query : query.toLowerCase();
+  let startIndex = 0;
+  while (matches.length < remaining) {
+    const idx = haystack.indexOf(needle, startIndex);
+    if (idx === -1)
+      break;
+    matches.push({ match: textToSearch.slice(idx, idx + query.length), index: idx });
+    startIndex = idx + query.length;
+  }
+  return matches;
+};
+var findRegexMatches = (textToSearch, query, options, remaining) => {
+  const flags = options.caseSensitive ? "g" : "gi";
+  const regex = new RegExp(query, flags);
+  const matches = [];
+  let match = regex.exec(textToSearch);
+  while (match !== null && matches.length < remaining) {
+    const matchText = match[0];
+    const index = match.index;
+    matches.push({ match: matchText, index });
+    if (matchText.length === 0) {
+      regex.lastIndex += 1;
+    }
+    match = regex.exec(textToSearch);
+  }
+  return matches;
+};
+var buildContextSegments = (textContent, index, length, contextChars) => {
+  const beforeStart = Math.max(0, index - contextChars);
+  const before = textContent.slice(beforeStart, index);
+  const afterEnd = Math.min(textContent.length, index + length + contextChars);
+  const after = textContent.slice(index + length, afterEnd);
+  return {
+    context_before: before,
+    context_after: after
+  };
+};
+var getPageLabelsSafe2 = async (pdfDocument, sourceDescription) => {
+  try {
+    return await pdfDocument.getPageLabels();
+  } catch (labelError) {
+    const message = labelError instanceof Error ? labelError.message : String(labelError);
+    logger18.warn("Error retrieving page labels", { sourceDescription, error: message });
+  }
+  return null;
+};
+var collectPageHitData = async (pdfDocument, pageNum, sourceDescription, options) => {
+  const { items } = await extractPageContent(pdfDocument, pageNum, false, sourceDescription);
+  return buildNormalizedPageText(items, {
+    preserveWhitespace: options.preserveWhitespace,
+    trimLines: options.trimLines,
+    ...options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}
+  });
+};
+var buildPageHits = (normalizedText, pageNum, pageLabels, options, remaining) => {
+  const matches = options.useRegex ? findRegexMatches(normalizedText.text ?? "", options.query, options, remaining) : findPlainMatches(normalizedText.text ?? "", options.query, options, remaining);
+  return matches.map((match) => {
+    const segments = buildContextSegments(normalizedText.text ?? "", match.index, match.match.length, options.contextChars);
+    return {
+      page_number: pageNum,
+      page_index: pageNum - 1,
+      page_label: pageLabels?.[pageNum - 1] ?? null,
+      match: match.match,
+      ...segments
+    };
+  });
+};
+var collectPageHits = async (pdfDocument, pagesToProcess, pageLabels, sourceDescription, options) => {
+  const hits = [];
+  const truncatedPages = [];
+  for (const pageNum of pagesToProcess) {
+    if (hits.length >= options.maxHits) {
+      break;
+    }
+    const normalized = await collectPageHitData(pdfDocument, pageNum, sourceDescription, options);
+    if (normalized.truncated) {
+      truncatedPages.push(pageNum);
+    }
+    if (!normalized.text) {
+      continue;
+    }
+    const remaining = options.maxHits - hits.length;
+    const pageHits = buildPageHits(normalized, pageNum, pageLabels, options, remaining);
+    hits.push(...pageHits);
+  }
+  return { hits, truncatedPages };
+};
+var destroyPdfDocument2 = async (pdfDocument, sourceDescription) => {
+  if (!pdfDocument || typeof pdfDocument.destroy !== "function") {
+    return;
+  }
+  try {
+    await pdfDocument.destroy();
+  } catch (destroyError) {
+    const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
+    logger18.warn("Error destroying PDF document", { sourceDescription, error: message });
+  }
+};
+var processSearchSource = async (source, sourceDescription, options, allowFullDocument) => {
+  let pdfDocument = null;
+  let result = { source: sourceDescription, success: false };
+  try {
+    const targetPages = getTargetPages(source.pages, sourceDescription);
+    const loadArgs = {
+      ...source.path ? { path: source.path } : {},
+      ...source.url ? { url: source.url } : {}
+    };
+    pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
+    const totalPages = pdfDocument.numPages;
+    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(targetPages, totalPages, true, {
+      allowFullDocument
+    });
+    const pageLabels = await getPageLabelsSafe2(pdfDocument, sourceDescription);
+    const { hits, truncatedPages } = await collectPageHits(pdfDocument, pagesToProcess, pageLabels, sourceDescription, options);
+    const warnings = [
+      ...rangeWarnings ?? [],
+      ...buildWarnings(invalidPages, totalPages),
+      ...guardWarning ? [guardWarning] : []
+    ];
+    result = {
+      source: sourceDescription,
+      success: true,
+      data: {
+        hits,
+        total_hits: hits.length,
+        ...warnings.length > 0 ? { warnings } : {},
+        ...truncatedPages.length > 0 ? { truncated_pages: truncatedPages } : {}
+      }
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    result = {
+      source: sourceDescription,
+      success: false,
+      error: `Failed to search ${sourceDescription}. Reason: ${message}`
+    };
+  } finally {
+    await destroyPdfDocument2(pdfDocument, sourceDescription);
+  }
+  return result;
+};
+var pdfSearch = tool12().description(`Search for specific text patterns across PDF pages
+
+` + `Use when you need to:
+` + `- Find specific keywords, phrases, or patterns across documents
+` + `- Locate where certain content appears before reading full pages
+` + `- Filter large PDFs to relevant sections only
+
+` + `Supports both plain text and regex patterns. Returns surrounding context for each match.
+
+` + `Workflow tip: Search first to identify relevant pages, then use pdf_read on those specific pages for full content.
+
+` + `Example:
+` + '  pdf_search({sources: [{path: "doc.pdf"}], query: "total revenue", context_chars: 100})').input(pdfSearchArgsSchema).handler(async ({ input }) => {
+  const {
+    sources,
+    query,
+    use_regex,
+    case_sensitive,
+    context_chars,
+    max_hits,
+    max_chars_per_page,
+    preserve_whitespace,
+    trim_lines,
+    allow_full_document
+  } = input;
+  const baseOptions = {
+    query,
+    useRegex: use_regex ?? false,
+    caseSensitive: case_sensitive ?? false,
+    contextChars: context_chars ?? 60,
+    maxHits: max_hits ?? 20,
+    preserveWhitespace: preserve_whitespace ?? false,
+    trimLines: trim_lines ?? true,
+    ...max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}
+  };
+  if (baseOptions.useRegex) {
+    try {
+      new RegExp(query);
+    } catch (regexError) {
+      const message = regexError instanceof Error ? regexError.message : String(regexError);
+      return toolError12(`Invalid regular expression: ${message}`);
+    }
+  }
+  const MAX_CONCURRENT_SOURCES2 = 3;
+  const results = [];
+  let remainingHits = baseOptions.maxHits;
+  for (let i = 0;i < sources.length; i += MAX_CONCURRENT_SOURCES2) {
+    const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES2);
+    const batchResults = await Promise.all(batch.map((source) => {
+      const sourceDescription = source.path ?? source.url ?? "unknown source";
+      return processSearchSource(source, sourceDescription, {
+        ...baseOptions,
+        maxHits: remainingHits
+      }, allow_full_document ?? false);
+    }));
+    results.push(...batchResults);
+    const hitsFound = batchResults.reduce((total, result) => total + (result.data?.total_hits ?? 0), 0);
+    remainingHits = Math.max(0, remainingHits - hitsFound);
+    if (remainingHits === 0) {
+      break;
+    }
+  }
+  if (results.every((r) => !r.success)) {
+    const errors = results.map((r) => r.error).join("; ");
+    return toolError12(`All sources failed to search: ${errors}`);
+  }
+  return [text12(JSON.stringify({ results }, null, 2))];
 });
 
 // src/index.ts

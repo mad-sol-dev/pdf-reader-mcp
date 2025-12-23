@@ -3,6 +3,7 @@ build/
 *.log
 coverage/
 .env*
+!.env.example
 .mcp.json
 docs/sessions/
 mistral-ocr-wrapper/

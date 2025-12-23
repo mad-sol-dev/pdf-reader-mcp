@@ -119,6 +119,10 @@ cd pdf-reader-mcp
 # Install dependencies
 bun install
 
+# (Optional) Configure environment variables for local testing
+cp .env.example .env
+# Edit .env and add your MISTRAL_API_KEY
+
 # Build the project
 bun run build
 ```

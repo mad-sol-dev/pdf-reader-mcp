@@ -42,18 +42,14 @@ import 'dotenv/config';
 import './pdf/polyfills.js';
 
 import { createServer, stdio } from '@sylphx/mcp-server-sdk';
-import { pdfCacheClear, pdfCacheStats } from './handlers/cache.js';
-import { pdfExtractImage } from './handlers/extractImage.js';
-import { pdfGetMetadata } from './handlers/getMetadata.js';
-import { pdfGetPageStats } from './handlers/getPageStats.js';
-import { pdfGetToc } from './handlers/getToc.js';
-import { pdfListImages } from './handlers/listImages.js';
+// Core Tools
 import { pdfInfo } from './handlers/pdfInfo.js';
-import { pdfOcr } from './handlers/pdfOcr.js';
 import { pdfRead } from './handlers/pdfRead.js';
-import { readPdf } from './handlers/readPdf.js';
-import { pdfRenderPage } from './handlers/renderPage.js';
+import { pdfExtractImage } from './handlers/extractImage.js';
+import { pdfOcr } from './handlers/pdfOcr.js';
 import { pdfSearch } from './handlers/searchPdf.js';
+// Advanced Tool
+import { pdfCacheClear } from './handlers/cache.js';
 
 const server = createServer({
   name: 'pdf-reader-mcp',
@@ -61,19 +57,12 @@ const server = createServer({
   instructions:
     'PDF toolkit for MCP clients: retrieve metadata, compute page statistics, inspect TOCs, read structured pages, search text, extract text/images, rasterize pages, perform OCR with caching, and manage caches (read_pdf maintained for compatibility).',
   tools: {
-    pdf_info: pdfInfo,
-    pdf_get_metadata: pdfGetMetadata,
-    pdf_get_page_stats: pdfGetPageStats,
-    pdf_get_toc: pdfGetToc,
-    pdf_list_images: pdfListImages,
-    pdf_extract_image: pdfExtractImage,
-    pdf_render_page: pdfRenderPage,
-    pdf_ocr: pdfOcr,
-    _pdf_cache_stats: pdfCacheStats,
-    _pdf_cache_clear: pdfCacheClear,
-    pdf_read: pdfRead,
-    pdf_search: pdfSearch,
-    read_pdf: readPdf,
+    pdf_info: pdfInfo, // PRE-STAGE: Metadata and document overview
+    pdf_read: pdfRead, // STAGE 1: Extract text from PDF pages
+    pdf_extract_image: pdfExtractImage, // STAGE 2: Extract specific images
+    pdf_ocr: pdfOcr, // STAGE 3: OCR for text in images
+    pdf_search: pdfSearch, // Shortcut: Search text across documents
+    _pdf_cache_clear: pdfCacheClear, // Advanced: Cache management
   },
   transport: stdio(),
 });

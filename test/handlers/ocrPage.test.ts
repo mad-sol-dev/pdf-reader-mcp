@@ -6,6 +6,10 @@ const mockRenderPageToPng = vi.fn();
 const mockPerformOcr = vi.fn();
 const mockWithPdfDocument = vi.fn();
 const mockGetConfiguredProvider = vi.fn();
+const mockSetCachedOcrPage = vi.fn();
+const mockGetCachedOcrPage = vi.fn();
+const mockSetCachedOcrImage = vi.fn();
+const mockGetCachedOcrImage = vi.fn();
 
 vi.mock('../../src/pdf/render.js', () => ({
   renderPageToPng: mockRenderPageToPng,
@@ -13,6 +17,13 @@ vi.mock('../../src/pdf/render.js', () => ({
 
 vi.mock('../../src/utils/pdfLifecycle.js', () => ({
   withPdfDocument: mockWithPdfDocument,
+}));
+
+vi.mock('../../src/utils/diskCache.js', () => ({
+  setCachedOcrPage: mockSetCachedOcrPage,
+  getCachedOcrPage: mockGetCachedOcrPage,
+  setCachedOcrImage: mockSetCachedOcrImage,
+  getCachedOcrImage: mockGetCachedOcrImage,
 }));
 
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({

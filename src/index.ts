@@ -9,16 +9,29 @@ process.stdout.write = ((
   callback?: (error?: Error) => void
 ) => {
   const str = chunk.toString();
+  const trimmed = str.trim();
 
-  // Redirect any warnings or debug output to stderr
+  // CRITICAL: Never redirect JSON-RPC messages to stderr
+  // JSON-RPC messages start with { or [ and are the core MCP protocol
+  const isJsonRpc = trimmed.startsWith('{') || trimmed.startsWith('[');
+
+  if (isJsonRpc) {
+    // This is JSON-RPC, always write to stdout
+    if (typeof encodingOrCallback === 'function') {
+      return originalStdoutWrite(chunk, encodingOrCallback);
+    }
+    return originalStdoutWrite(chunk, encodingOrCallback, callback);
+  }
+
+  // Only redirect non-JSON content that looks like warnings/logs to stderr
   // Common patterns: "Warning:", "Cannot polyfill", "DOMMatrix", etc.
   const shouldRedirectToStderr =
     str.includes('Warning:') ||
     str.includes('Cannot polyfill') ||
     str.includes('DOMMatrix') ||
     str.includes('Path2D') ||
-    str.trim().startsWith('Warning') ||
-    str.trim().startsWith('(node:'); // Node.js warnings
+    trimmed.startsWith('Warning') ||
+    trimmed.startsWith('(node:'); // Node.js warnings
 
   if (shouldRedirectToStderr) {
     if (typeof encodingOrCallback === 'function') {
@@ -42,14 +55,14 @@ import 'dotenv/config';
 import './pdf/polyfills.js';
 
 import { createServer, stdio } from '@sylphx/mcp-server-sdk';
-// Core Tools
-import { pdfInfo } from './handlers/pdfInfo.js';
-import { pdfRead } from './handlers/pdfRead.js';
-import { pdfExtractImage } from './handlers/extractImage.js';
-import { pdfOcr } from './handlers/pdfOcr.js';
-import { pdfSearch } from './handlers/searchPdf.js';
 // Advanced Tool
 import { pdfCacheClear } from './handlers/cache.js';
+import { pdfExtractImage } from './handlers/extractImage.js';
+// Core Tools
+import { pdfInfo } from './handlers/pdfInfo.js';
+import { pdfOcr } from './handlers/pdfOcr.js';
+import { pdfRead } from './handlers/pdfRead.js';
+import { pdfSearch } from './handlers/searchPdf.js';
 
 const server = createServer({
   name: 'pdf-reader-mcp',

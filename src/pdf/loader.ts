@@ -4,10 +4,10 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { NodeCanvasFactory } from './canvasFactory.js';
 import { ErrorCode, PdfError } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { resolvePath } from '../utils/pathUtils.js';
+import { NodeCanvasFactory } from './canvasFactory.js';
 
 const logger = createLogger('Loader');
 
@@ -22,6 +22,9 @@ const MAX_PDF_SIZE = 100 * 1024 * 1024;
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_READ_TIMEOUT_MS = 15_000;
+// Default allowed protocols to prevent SSRF attacks
+// Only allow HTTP/HTTPS by default; users can override if needed
+const DEFAULT_ALLOWED_PROTOCOLS = ['https:', 'http:'];
 
 type LoadPdfOptions = {
   allowedProtocols?: string[];
@@ -45,11 +48,12 @@ const fetchPdfBytes = async (
     );
   }
 
-  const allowedProtocols = options.allowedProtocols ?? [];
-  if (allowedProtocols.length > 0 && !allowedProtocols.includes(parsedUrl.protocol)) {
+  // Use default allowed protocols if not specified (SSRF protection)
+  const allowedProtocols = options.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
+  if (!allowedProtocols.includes(parsedUrl.protocol)) {
     throw new PdfError(
       ErrorCode.InvalidRequest,
-      `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}.`
+      `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}. Allowed protocols: ${allowedProtocols.join(', ')}`
     );
   }
 

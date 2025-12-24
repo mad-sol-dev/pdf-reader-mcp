@@ -12,9 +12,147 @@ global.Path2D = Path2D;
 // src/index.ts
 import { createServer, stdio } from "@sylphx/mcp-server-sdk";
 
-// src/handlers/pdfInfo.ts
+// src/handlers/cache.ts
 import { text, tool, toolError } from "@sylphx/mcp-server-sdk";
-import { OPS as OPS2 } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+// src/schemas/cache.ts
+import { description, object, optional, str } from "@sylphx/vex";
+var cacheClearArgsSchema = object({
+  scope: optional(str(description("Cache scope: text, ocr, or all. Defaults to all.")))
+});
+
+// src/utils/cache.ts
+class LruCache {
+  options;
+  store = new Map;
+  evictions = 0;
+  constructor(options) {
+    this.options = options;
+  }
+  get size() {
+    return this.store.size;
+  }
+  get evictionCount() {
+    return this.evictions;
+  }
+  getKeys() {
+    return Array.from(this.store.keys());
+  }
+  clear() {
+    this.store.clear();
+  }
+  isExpired(entry) {
+    if (!this.options.ttlMs)
+      return false;
+    return Date.now() - entry.createdAt > this.options.ttlMs;
+  }
+  markRecentlyUsed(key, entry) {
+    this.store.delete(key);
+    this.store.set(key, entry);
+  }
+  trimToMaxEntries() {
+    while (this.store.size > this.options.maxEntries) {
+      const oldestKey = this.store.keys().next().value;
+      if (!oldestKey)
+        return;
+      this.store.delete(oldestKey);
+      this.evictions += 1;
+    }
+  }
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry)
+      return;
+    if (this.isExpired(entry)) {
+      this.store.delete(key);
+      this.evictions += 1;
+      return;
+    }
+    this.markRecentlyUsed(key, entry);
+    return entry.value;
+  }
+  set(key, value) {
+    const entry = { value, createdAt: Date.now() };
+    if (this.store.has(key)) {
+      this.store.delete(key);
+    }
+    this.store.set(key, entry);
+    this.trimToMaxEntries();
+  }
+}
+var DEFAULT_CACHE_OPTIONS = {
+  text: { maxEntries: 500 },
+  ocr: { maxEntries: 500 }
+};
+var cacheOptions = {
+  text: { ...DEFAULT_CACHE_OPTIONS.text },
+  ocr: { ...DEFAULT_CACHE_OPTIONS.ocr }
+};
+var buildCache = (scope) => new LruCache(cacheOptions[scope]);
+var textCache = buildCache("text");
+var ocrCache = buildCache("ocr");
+var buildPageKey = (fingerprint, page, options) => {
+  const serializedOptions = JSON.stringify({
+    includeImageIndexes: options.includeImageIndexes,
+    preserveWhitespace: options.preserveWhitespace,
+    trimLines: options.trimLines,
+    maxCharsPerPage: options.maxCharsPerPage ?? null
+  });
+  return `${fingerprint}#page#${page}#${serializedOptions}`;
+};
+var buildOcrProviderKey = (provider) => provider ? JSON.stringify({
+  name: provider.name,
+  type: provider.type,
+  endpoint: provider.endpoint,
+  model: provider.model,
+  language: provider.language,
+  extras: provider.extras
+}) : "default";
+var buildOcrKey = (fingerprint, target) => `${fingerprint}#${target}`;
+var getCachedPageText = (fingerprint, page, options) => {
+  if (!fingerprint)
+    return;
+  return textCache.get(buildPageKey(fingerprint, page, options));
+};
+var setCachedPageText = (fingerprint, page, options, value) => {
+  if (!fingerprint)
+    return;
+  textCache.set(buildPageKey(fingerprint, page, options), value);
+};
+var getCachedOcrText = (fingerprint, target) => {
+  if (!fingerprint)
+    return;
+  return ocrCache.get(buildOcrKey(fingerprint, target));
+};
+var setCachedOcrText = (fingerprint, target, value) => {
+  if (!fingerprint)
+    return;
+  ocrCache.set(buildOcrKey(fingerprint, target), value);
+};
+var clearCache = (scope) => {
+  const clearText = scope === "text" || scope === "all";
+  const clearOcr = scope === "ocr" || scope === "all";
+  if (clearText) {
+    textCache.clear();
+  }
+  if (clearOcr) {
+    ocrCache.clear();
+  }
+  return { cleared_text: clearText, cleared_ocr: clearOcr };
+};
+
+// src/handlers/cache.ts
+var pdfCacheClear = tool().description("Clear text and/or OCR caches.").input(cacheClearArgsSchema).handler(async ({ input }) => {
+  const scope = input.scope ?? "all";
+  if (!["text", "ocr", "all"].includes(scope)) {
+    return toolError(`Invalid scope '${scope}'. Expected one of: text, ocr, all.`);
+  }
+  const result = clearCache(scope);
+  return [text(JSON.stringify(result, null, 2))];
+});
+
+// src/handlers/extractImage.ts
+import { image, text as text2, tool as tool2, toolError as toolError2 } from "@sylphx/mcp-server-sdk";
 
 // src/pdf/extractor.ts
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -403,65 +541,6 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
   return { items: contentItems.sort((a, b) => b.yPosition - a.yPosition), warnings };
 };
 
-// src/schemas/pdfInfo.ts
-import { array as array2, description as description2, object as object2, optional as optional2, str as str2 } from "@sylphx/vex";
-
-// src/schemas/pdfSource.ts
-import {
-  array,
-  description,
-  gte,
-  int,
-  min,
-  num,
-  object,
-  optional,
-  str,
-  union
-} from "@sylphx/vex";
-var pageSpecifierSchema = union(array(num(int, gte(1))), str(min(1)));
-var pdfSourceSchema = object({
-  path: optional(str(min(1), description("Path to the local PDF file (absolute or relative to cwd)."))),
-  url: optional(str(min(1), description("URL of the PDF file."))),
-  pages: optional(pageSpecifierSchema)
-});
-
-// src/schemas/pdfInfo.ts
-var pdfInfoArgsSchema = object2({
-  source: pdfSourceSchema,
-  include: optional2(array2(str2(), description2('Optional info to include: "toc" (table of contents), "stats" (page/image statistics). ' + "Omit for basic metadata only (pages, title, author, language).")))
-});
-
-// src/pdf/loader.ts
-import fs from "node:fs/promises";
-import { createRequire } from "node:module";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-
-// src/pdf/canvasFactory.ts
-import { createCanvas } from "@napi-rs/canvas";
-
-class NodeCanvasFactory {
-  create(width, height) {
-    const safeWidth = Math.floor(Math.max(1, width));
-    const safeHeight = Math.floor(Math.max(1, height));
-    const canvas = createCanvas(safeWidth, safeHeight);
-    const context = canvas.getContext("2d");
-    return { canvas, context };
-  }
-  reset(canvasAndContext, width, height) {
-    const safeWidth = Math.floor(Math.max(1, width));
-    const safeHeight = Math.floor(Math.max(1, height));
-    canvasAndContext.canvas.width = safeWidth;
-    canvasAndContext.canvas.height = safeHeight;
-  }
-  destroy(canvasAndContext) {
-    canvasAndContext.canvas.width = 0;
-    canvasAndContext.canvas.height = 0;
-    canvasAndContext.canvas = null;
-    canvasAndContext.context = null;
-  }
-}
-
 // src/utils/errors.ts
 class PdfError extends Error {
   code;
@@ -471,6 +550,138 @@ class PdfError extends Error {
     this.name = "PdfError";
   }
 }
+
+// src/pdf/parser.ts
+var logger3 = createLogger("Parser");
+var MAX_RANGE_SIZE = 1e4;
+var DEFAULT_SAMPLE_PAGE_LIMIT = 5;
+var parseRangePart = (part, pages) => {
+  const trimmedPart = part.trim();
+  if (trimmedPart.includes("-")) {
+    const splitResult = trimmedPart.split("-");
+    const startStr = splitResult[0] || "";
+    const endStr = splitResult[1];
+    const start = parseInt(startStr, 10);
+    const end = endStr === "" || endStr === undefined ? Infinity : parseInt(endStr, 10);
+    if (Number.isNaN(start) || Number.isNaN(end) || start <= 0 || start > end) {
+      throw new Error(`Invalid page range values: ${trimmedPart}`);
+    }
+    const practicalEnd = Math.min(end, start + MAX_RANGE_SIZE);
+    for (let i = start;i <= practicalEnd; i++) {
+      pages.add(i);
+    }
+    if (end === Infinity && practicalEnd === start + MAX_RANGE_SIZE) {
+      logger3.warn("Open-ended range truncated", { start, practicalEnd });
+      return `Open-ended page range starting at ${start} was truncated at ${practicalEnd} to cap open ranges.`;
+    }
+  } else {
+    const page = parseInt(trimmedPart, 10);
+    if (Number.isNaN(page) || page <= 0) {
+      throw new Error(`Invalid page number: ${trimmedPart}`);
+    }
+    pages.add(page);
+  }
+  return;
+};
+var parsePageRanges = (ranges) => {
+  const pages = new Set;
+  const parts = ranges.split(",");
+  const warnings = [];
+  for (const part of parts) {
+    const warning = parseRangePart(part, pages);
+    if (warning) {
+      warnings.push(warning);
+    }
+  }
+  if (pages.size === 0) {
+    throw new Error("Page range string resulted in zero valid pages.");
+  }
+  return { pages: Array.from(pages).sort((a, b) => a - b), warnings };
+};
+var getTargetPages = (sourcePages, sourceDescription) => {
+  if (!sourcePages) {
+    return { pages: undefined, warnings: [] };
+  }
+  try {
+    if (typeof sourcePages === "string") {
+      return parsePageRanges(sourcePages);
+    }
+    if (sourcePages.some((p) => !Number.isInteger(p) || p <= 0)) {
+      throw new Error("Page numbers in array must be positive integers.");
+    }
+    const uniquePages = [...new Set(sourcePages)].sort((a, b) => a - b);
+    if (uniquePages.length === 0) {
+      throw new Error("Page specification resulted in an empty set of pages.");
+    }
+    return { pages: uniquePages, warnings: [] };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new PdfError(-32602 /* InvalidParams */, `Invalid page specification for source ${sourceDescription}: ${message}`);
+  }
+};
+var determinePagesToProcess = (targetPages, totalPages, includeFullText, options) => {
+  const { pages, warnings: rangeWarnings } = targetPages;
+  if (pages) {
+    const pagesToProcess = pages.filter((p) => p <= totalPages);
+    const invalidPages = pages.filter((p) => p > totalPages);
+    return { pagesToProcess, invalidPages, rangeWarnings };
+  }
+  const allowFullDocument = options?.allowFullDocument ?? includeFullText;
+  if (includeFullText) {
+    if (allowFullDocument) {
+      const pagesToProcess2 = Array.from({ length: totalPages }, (_, i) => i + 1);
+      return { pagesToProcess: pagesToProcess2, invalidPages: [] };
+    }
+    const samplePageLimit = options?.samplePageLimit ?? DEFAULT_SAMPLE_PAGE_LIMIT;
+    const sampledPagesCount = Math.min(samplePageLimit, totalPages);
+    const pagesToProcess = Array.from({ length: sampledPagesCount }, (_, i) => i + 1);
+    return {
+      pagesToProcess,
+      invalidPages: [],
+      sampledFromFullDocument: true,
+      guardWarning: totalPages > samplePageLimit ? `No pages specified; returning the first ${sampledPagesCount} of ${totalPages} pages. Specify pages or set allow_full_document=true to process the full document.` : "No pages specified; processed available pages because the document is small. Specify pages or set allow_full_document=true to control full-document requests."
+    };
+  }
+  return { pagesToProcess: [], invalidPages: [] };
+};
+
+// src/schemas/extractImage.ts
+import { description as description3, gte as gte2, int as int2, num as num2, object as object3 } from "@sylphx/vex";
+
+// src/schemas/pdfSource.ts
+import {
+  array,
+  description as description2,
+  gte,
+  int,
+  min,
+  num,
+  object as object2,
+  optional as optional2,
+  str as str2,
+  union
+} from "@sylphx/vex";
+var pageSpecifierSchema = union(array(num(int, gte(1))), str2(min(1)));
+var pdfSourceSchema = object2({
+  path: optional2(str2(min(1), description2("Path to the local PDF file (absolute or relative to cwd)."))),
+  url: optional2(str2(min(1), description2("URL of the PDF file."))),
+  pages: optional2(pageSpecifierSchema)
+});
+
+// src/schemas/extractImage.ts
+var extractImageArgsSchema = object3({
+  source: pdfSourceSchema,
+  page: num2(int2, gte2(1), description3("1-based page number containing the image.")),
+  index: num2(int2, gte2(0), description3("0-based image index within the page."))
+});
+
+// src/utils/ocrRecommendation.ts
+var OCR_IMAGE_RECOMMENDATION = "⚠️ For text extraction from this image, consider using pdf_ocr_image with Mistral OCR (faster, cheaper, cached). Manual image analysis via LLMs like Claude is more expensive, does not create persistent cache files, and is less precise for text extraction.";
+
+// src/pdf/loader.ts
+import fs from "node:fs/promises";
+import { createRequire } from "node:module";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 // src/utils/pathUtils.ts
 import path from "node:path";
@@ -518,13 +729,39 @@ var resolvePath = (userPath, options = {}) => {
   return path.normalize(resolvedPath);
 };
 
+// src/pdf/canvasFactory.ts
+import { createCanvas } from "@napi-rs/canvas";
+
+class NodeCanvasFactory {
+  create(width, height) {
+    const safeWidth = Math.floor(Math.max(1, width));
+    const safeHeight = Math.floor(Math.max(1, height));
+    const canvas = createCanvas(safeWidth, safeHeight);
+    const context = canvas.getContext("2d");
+    return { canvas, context };
+  }
+  reset(canvasAndContext, width, height) {
+    const safeWidth = Math.floor(Math.max(1, width));
+    const safeHeight = Math.floor(Math.max(1, height));
+    canvasAndContext.canvas.width = safeWidth;
+    canvasAndContext.canvas.height = safeHeight;
+  }
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
+
 // src/pdf/loader.ts
-var logger3 = createLogger("Loader");
+var logger4 = createLogger("Loader");
 var require2 = createRequire(import.meta.url);
 var CMAP_URL = require2.resolve("pdfjs-dist/package.json").replace("package.json", "cmaps/");
 var MAX_PDF_SIZE = 100 * 1024 * 1024;
 var DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 var DEFAULT_READ_TIMEOUT_MS = 15000;
+var DEFAULT_ALLOWED_PROTOCOLS = ["https:", "http:"];
 var fetchPdfBytes = async (url, sourceDescription, options) => {
   let parsedUrl;
   try {
@@ -532,9 +769,9 @@ var fetchPdfBytes = async (url, sourceDescription, options) => {
   } catch (err) {
     throw new PdfError(-32602 /* InvalidParams */, `Invalid URL for ${sourceDescription}. Reason: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const allowedProtocols = options.allowedProtocols ?? [];
-  if (allowedProtocols.length > 0 && !allowedProtocols.includes(parsedUrl.protocol)) {
-    throw new PdfError(-32600 /* InvalidRequest */, `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}.`);
+  const allowedProtocols = options.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
+  if (!allowedProtocols.includes(parsedUrl.protocol)) {
+    throw new PdfError(-32600 /* InvalidRequest */, `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}. Allowed protocols: ${allowedProtocols.join(", ")}`);
   }
   const maxBytes = options.maxBytes ?? MAX_PDF_SIZE;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -674,13 +911,13 @@ var loadPdfDocument = async (source, sourceDescription, options = {}) => {
     return await loadingTask.promise;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger3.error("PDF.js loading error", { sourceDescription, error: message });
+    logger4.error("PDF.js loading error", { sourceDescription, error: message });
     throw new PdfError(-32600 /* InvalidRequest */, `Failed to load PDF document from ${sourceDescription}. Reason: ${message || "Unknown loading error"}`, { cause: err instanceof Error ? err : undefined });
   }
 };
 
 // src/utils/pdfLifecycle.ts
-var logger4 = createLogger("PdfLifecycle");
+var logger5 = createLogger("PdfLifecycle");
 var withPdfDocument = async (source, sourceDescription, handler) => {
   const pdfDocument = await loadPdfDocument(source, sourceDescription);
   try {
@@ -691,14 +928,98 @@ var withPdfDocument = async (source, sourceDescription, handler) => {
         await pdfDocument.destroy();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger4.warn("Error destroying PDF document", { sourceDescription, error: message });
+        logger5.warn("Error destroying PDF document", { sourceDescription, error: message });
       }
     }
   }
 };
 
+// src/handlers/extractImage.ts
+var logger6 = createLogger("ExtractImage");
+var buildImageMetadata = (targetImage, warnings) => ({
+  page: targetImage.page,
+  index: targetImage.index,
+  width: targetImage.width,
+  height: targetImage.height,
+  format: targetImage.format,
+  recommendation: OCR_IMAGE_RECOMMENDATION,
+  warnings: warnings.length > 0 ? warnings : undefined
+});
+var resolveTargetPages = (sourcePages, sourceDescription, page) => {
+  const targetPages = getTargetPages(sourcePages, sourceDescription);
+  const pages = targetPages.pages ? [...targetPages.pages] : [];
+  if (!pages.includes(page)) {
+    pages.push(page);
+  }
+  return { ...targetPages, pages };
+};
+var fetchImage = async (source, sourceDescription, page, index) => {
+  const loadArgs = {
+    ...source.path ? { path: source.path } : {},
+    ...source.url ? { url: source.url } : {}
+  };
+  return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
+    const totalPages = pdfDocument.numPages;
+    if (page < 1 || page > totalPages) {
+      throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
+    }
+    const { pagesToProcess, invalidPages, rangeWarnings } = determinePagesToProcess(resolveTargetPages(source.pages, sourceDescription, page), totalPages, false);
+    if (!pagesToProcess.includes(page)) {
+      throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
+    }
+    const { images: pageImages, warnings: imageWarnings } = await extractImages(pdfDocument, [
+      page
+    ]);
+    const targetImage = pageImages.find((img) => img.index === index && img.page === page);
+    if (!targetImage) {
+      throw new Error(`Image with index ${index} not found on page ${page}.`);
+    }
+    const warnings = [
+      ...rangeWarnings ?? [],
+      ...buildWarnings(invalidPages, totalPages),
+      ...imageWarnings
+    ];
+    return { metadata: buildImageMetadata(targetImage, warnings), imageData: targetImage.data };
+  });
+};
+var pdfExtractImage = tool2().description(`STAGE 2: Extract image from PDF for Vision analysis
+
+` + `Use AFTER Stage 1 (pdf_read) when you see [IMAGE] markers or image_indexes in the text.
+
+` + "Returns base64-encoded PNG image that you can analyze with your Vision capabilities. " + `If the image contains text that Vision cannot read clearly, use Stage 3 (pdf_ocr) instead.
+
+` + `Example:
+` + '  pdf_extract_image({source: {path: "doc.pdf"}, page: 5, index: 0})').input(extractImageArgsSchema).handler(async ({ input }) => {
+  const { source, page, index } = input;
+  const sourceDescription = source.path ?? source.url ?? "unknown source";
+  const normalizedSource = {
+    ...source.path ? { path: source.path } : {},
+    ...source.url ? { url: source.url } : {},
+    ...source.pages !== undefined ? { pages: source.pages } : {}
+  };
+  try {
+    const result = await fetchImage(normalizedSource, sourceDescription, page, index);
+    return [text2(JSON.stringify(result.metadata, null, 2)), image(result.imageData, "image/png")];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger6.error("Failed to fetch image", { sourceDescription, page, index, error: message });
+    return toolError2(`Failed to fetch image from ${sourceDescription}. Reason: ${message}`);
+  }
+});
+
 // src/handlers/pdfInfo.ts
-var logger5 = createLogger("PdfInfo");
+import { text as text3, tool as tool3, toolError as toolError3 } from "@sylphx/mcp-server-sdk";
+import { OPS as OPS2 } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+// src/schemas/pdfInfo.ts
+import { array as array2, description as description4, object as object4, optional as optional3, str as str3 } from "@sylphx/vex";
+var pdfInfoArgsSchema = object4({
+  source: pdfSourceSchema,
+  include: optional3(array2(str3(), description4('Optional info to include: "toc" (table of contents), "stats" (page/image statistics). ' + "Omit for basic metadata only (pages, title, author, language).")))
+});
+
+// src/handlers/pdfInfo.ts
+var logger7 = createLogger("PdfInfo");
 var buildLoadArgs = (source) => ({
   ...source.path ? { path: source.path } : {},
   ...source.url ? { url: source.url } : {}
@@ -726,7 +1047,7 @@ var getTocInfo = async (pdfDocument, sourceDescription) => {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger5.warn("Error checking TOC", { sourceDescription, error: message });
+    logger7.warn("Error checking TOC", { sourceDescription, error: message });
     return { has_toc: false };
   }
 };
@@ -749,7 +1070,7 @@ var countTotalImages = async (pdfDocument, pagesToCheck, sourceDescription) => {
       totalImages += await countImagesOnPage(page);
     } catch (pageError) {
       const message = pageError instanceof Error ? pageError.message : String(pageError);
-      logger5.warn("Error checking images on page", {
+      logger7.warn("Error checking images on page", {
         sourceDescription,
         page: pageNum,
         error: message
@@ -776,7 +1097,7 @@ var getImageStats = async (pdfDocument, sourceDescription) => {
     return buildImageStatsResult(totalImages, pagesToCheck, numPages);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger5.warn("Error counting images", { sourceDescription, error: message });
+    logger7.warn("Error counting images", { sourceDescription, error: message });
     return { has_images: false };
   }
 };
@@ -839,7 +1160,7 @@ var processSource = async (args) => {
     };
   });
 };
-var pdfInfo = tool().description(`QUICK CHECK: Get PDF metadata and overview
+var pdfInfo = tool3().description(`QUICK CHECK: Get PDF metadata and overview
 
 ` + `Use for fast answers about the PDF without loading content:
 ` + `- How many pages?
@@ -854,7 +1175,7 @@ var pdfInfo = tool().description(`QUICK CHECK: Get PDF metadata and overview
 ` + '  pdf_info({source: {path: "doc.pdf"}, include: ["toc", "stats"]})').input(pdfInfoArgsSchema).handler(async ({ input }) => {
   try {
     const result = await processSource(input);
-    return [text(JSON.stringify(result, null, 2))];
+    return [text3(JSON.stringify(result, null, 2))];
   } catch (error) {
     const sourceDescription = input.source.path ?? input.source.url ?? "unknown source";
     const message = error instanceof Error ? error.message : String(error);
@@ -863,739 +1184,7 @@ var pdfInfo = tool().description(`QUICK CHECK: Get PDF metadata and overview
       success: false,
       error: `Failed to get info for ${sourceDescription}. Reason: ${message}`
     };
-    return toolError(JSON.stringify(errorResult));
-  }
-});
-
-// src/handlers/pdfRead.ts
-import { text as text2, tool as tool2, toolError as toolError2 } from "@sylphx/mcp-server-sdk";
-
-// src/pdf/parser.ts
-var logger6 = createLogger("Parser");
-var MAX_RANGE_SIZE = 1e4;
-var DEFAULT_SAMPLE_PAGE_LIMIT = 5;
-var parseRangePart = (part, pages) => {
-  const trimmedPart = part.trim();
-  if (trimmedPart.includes("-")) {
-    const splitResult = trimmedPart.split("-");
-    const startStr = splitResult[0] || "";
-    const endStr = splitResult[1];
-    const start = parseInt(startStr, 10);
-    const end = endStr === "" || endStr === undefined ? Infinity : parseInt(endStr, 10);
-    if (Number.isNaN(start) || Number.isNaN(end) || start <= 0 || start > end) {
-      throw new Error(`Invalid page range values: ${trimmedPart}`);
-    }
-    const practicalEnd = Math.min(end, start + MAX_RANGE_SIZE);
-    for (let i = start;i <= practicalEnd; i++) {
-      pages.add(i);
-    }
-    if (end === Infinity && practicalEnd === start + MAX_RANGE_SIZE) {
-      logger6.warn("Open-ended range truncated", { start, practicalEnd });
-      return `Open-ended page range starting at ${start} was truncated at ${practicalEnd} to cap open ranges.`;
-    }
-  } else {
-    const page = parseInt(trimmedPart, 10);
-    if (Number.isNaN(page) || page <= 0) {
-      throw new Error(`Invalid page number: ${trimmedPart}`);
-    }
-    pages.add(page);
-  }
-  return;
-};
-var parsePageRanges = (ranges) => {
-  const pages = new Set;
-  const parts = ranges.split(",");
-  const warnings = [];
-  for (const part of parts) {
-    const warning = parseRangePart(part, pages);
-    if (warning) {
-      warnings.push(warning);
-    }
-  }
-  if (pages.size === 0) {
-    throw new Error("Page range string resulted in zero valid pages.");
-  }
-  return { pages: Array.from(pages).sort((a, b) => a - b), warnings };
-};
-var getTargetPages = (sourcePages, sourceDescription) => {
-  if (!sourcePages) {
-    return { pages: undefined, warnings: [] };
-  }
-  try {
-    if (typeof sourcePages === "string") {
-      return parsePageRanges(sourcePages);
-    }
-    if (sourcePages.some((p) => !Number.isInteger(p) || p <= 0)) {
-      throw new Error("Page numbers in array must be positive integers.");
-    }
-    const uniquePages = [...new Set(sourcePages)].sort((a, b) => a - b);
-    if (uniquePages.length === 0) {
-      throw new Error("Page specification resulted in an empty set of pages.");
-    }
-    return { pages: uniquePages, warnings: [] };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new PdfError(-32602 /* InvalidParams */, `Invalid page specification for source ${sourceDescription}: ${message}`);
-  }
-};
-var determinePagesToProcess = (targetPages, totalPages, includeFullText, options) => {
-  const { pages, warnings: rangeWarnings } = targetPages;
-  if (pages) {
-    const pagesToProcess = pages.filter((p) => p <= totalPages);
-    const invalidPages = pages.filter((p) => p > totalPages);
-    return { pagesToProcess, invalidPages, rangeWarnings };
-  }
-  const allowFullDocument = options?.allowFullDocument ?? includeFullText;
-  if (includeFullText) {
-    if (allowFullDocument) {
-      const pagesToProcess2 = Array.from({ length: totalPages }, (_, i) => i + 1);
-      return { pagesToProcess: pagesToProcess2, invalidPages: [] };
-    }
-    const samplePageLimit = options?.samplePageLimit ?? DEFAULT_SAMPLE_PAGE_LIMIT;
-    const sampledPagesCount = Math.min(samplePageLimit, totalPages);
-    const pagesToProcess = Array.from({ length: sampledPagesCount }, (_, i) => i + 1);
-    return {
-      pagesToProcess,
-      invalidPages: [],
-      sampledFromFullDocument: true,
-      guardWarning: totalPages > samplePageLimit ? `No pages specified; returning the first ${sampledPagesCount} of ${totalPages} pages. Specify pages or set allow_full_document=true to process the full document.` : "No pages specified; processed available pages because the document is small. Specify pages or set allow_full_document=true to control full-document requests."
-    };
-  }
-  return { pagesToProcess: [], invalidPages: [] };
-};
-
-// src/pdf/tableDetection.ts
-var detectTables = (items) => {
-  const tables = [];
-  const textItems = items.filter((item) => item.type === "text" && item.xPosition !== undefined);
-  if (textItems.length < 9) {
-    return tables;
-  }
-  let startIndex = 0;
-  while (startIndex < textItems.length) {
-    const tableCandidate = analyzeTableCandidate(textItems, startIndex);
-    if (tableCandidate) {
-      const originalStartIndex = items.indexOf(textItems[startIndex]);
-      const originalEndIndex = items.indexOf(textItems[tableCandidate.endIndex]);
-      tables.push({
-        startIndex: originalStartIndex,
-        endIndex: originalEndIndex,
-        cols: tableCandidate.cols,
-        rows: tableCandidate.rows
-      });
-      startIndex = tableCandidate.endIndex + 1;
-    } else {
-      startIndex++;
-    }
-  }
-  return tables;
-};
-var analyzeTableCandidate = (items, startIndex) => {
-  const MIN_COLUMNS = 3;
-  const MIN_ROWS = 3;
-  const MAX_ITEMS_TO_CHECK = 50;
-  const MIN_TOLERANCE = 10;
-  const MAX_TOLERANCE = 50;
-  const checkRange = Math.min(items.length - startIndex, MAX_ITEMS_TO_CHECK);
-  if (checkRange < MIN_COLUMNS * MIN_ROWS) {
-    return null;
-  }
-  const itemsInRange = items.slice(startIndex, startIndex + checkRange);
-  const avgFontSize = calculateAverageFontSize(itemsInRange);
-  const estimatedPageWidth = estimatePageWidth(itemsInRange);
-  const fontBasedTolerance = avgFontSize * 0.5;
-  const pageWidthTolerance = estimatedPageWidth ? estimatedPageWidth * 0.05 : 0;
-  const COLUMN_TOLERANCE = clamp(Math.max(fontBasedTolerance, pageWidthTolerance), MIN_TOLERANCE, MAX_TOLERANCE);
-  const xPositions = [];
-  for (const item of itemsInRange) {
-    const x = item.xPosition;
-    if (x !== undefined) {
-      xPositions.push(x);
-    }
-  }
-  const columnPositions = clusterXPositions(xPositions, COLUMN_TOLERANCE);
-  if (columnPositions.length < MIN_COLUMNS) {
-    return null;
-  }
-  const rowsByY = new Map;
-  for (const item of itemsInRange) {
-    if (item.xPosition === undefined)
-      continue;
-    const columnIndex = findColumnIndex(item.xPosition, columnPositions, COLUMN_TOLERANCE);
-    if (columnIndex === -1)
-      continue;
-    const y = item.yPosition;
-    if (!rowsByY.has(y)) {
-      rowsByY.set(y, []);
-    }
-    rowsByY.get(y)?.push(columnIndex);
-  }
-  const validRows = Array.from(rowsByY.values()).filter((cols) => cols.length >= MIN_COLUMNS - 1);
-  if (validRows.length < MIN_ROWS) {
-    return null;
-  }
-  const tableYPositions = Array.from(rowsByY.keys()).slice(0, validRows.length);
-  const lastY = tableYPositions[tableYPositions.length - 1];
-  if (lastY === undefined)
-    return null;
-  const endIndex = itemsInRange.findIndex((item) => item.yPosition < (lastY ?? 0));
-  const actualEndIndex = endIndex === -1 ? startIndex + checkRange - 1 : startIndex + endIndex - 1;
-  return {
-    endIndex: actualEndIndex,
-    cols: columnPositions.length,
-    rows: validRows.length
-  };
-};
-var calculateAverageFontSize = (items) => {
-  const fontSizes = items.map((item) => item.fontSize).filter((value) => typeof value === "number" && value > 0);
-  if (fontSizes.length > 0) {
-    return fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length;
-  }
-  const averageCharWidth = estimateAverageCharacterWidth(items);
-  if (averageCharWidth > 0) {
-    return averageCharWidth / 0.5;
-  }
-  return 12;
-};
-var estimateAverageCharacterWidth = (items) => {
-  const rows = new Map;
-  for (const item of items) {
-    if (item.type !== "text" || item.xPosition === undefined || !item.textContent) {
-      continue;
-    }
-    if (!rows.has(item.yPosition)) {
-      rows.set(item.yPosition, []);
-    }
-    rows.get(item.yPosition)?.push(item);
-  }
-  const widthSamples = [];
-  for (const rowItems of rows.values()) {
-    rowItems.sort((a, b) => (a.xPosition ?? 0) - (b.xPosition ?? 0));
-    for (let i = 0;i < rowItems.length - 1; i++) {
-      const current = rowItems[i];
-      const next = rowItems[i + 1];
-      if (!current || !next || current.xPosition === undefined || next.xPosition === undefined) {
-        continue;
-      }
-      const textLength = current.textContent?.length ?? 0;
-      if (textLength === 0)
-        continue;
-      const deltaX = next.xPosition - current.xPosition;
-      if (deltaX <= 0)
-        continue;
-      widthSamples.push(deltaX / textLength);
-    }
-  }
-  if (widthSamples.length === 0) {
-    return 0;
-  }
-  return widthSamples.reduce((sum, value) => sum + value, 0) / widthSamples.length;
-};
-var estimatePageWidth = (items) => {
-  const xPositions = items.map((item) => item.xPosition).filter((value) => typeof value === "number");
-  if (xPositions.length < 2)
-    return null;
-  const minX = Math.min(...xPositions);
-  const maxX = Math.max(...xPositions);
-  const width = maxX - minX;
-  return width > 0 ? width : null;
-};
-var clamp = (value, min2, max) => Math.max(min2, Math.min(max, value));
-var clusterXPositions = (xPositions, tolerance) => {
-  if (xPositions.length === 0)
-    return [];
-  const sorted = [...xPositions].sort((a, b) => a - b);
-  const clusters = [sorted[0]];
-  for (const x of sorted) {
-    const lastCluster = clusters[clusters.length - 1];
-    if (lastCluster === undefined)
-      continue;
-    if (x - lastCluster > tolerance) {
-      clusters.push(x);
-    }
-  }
-  return clusters;
-};
-var findColumnIndex = (x, columnPositions, tolerance) => {
-  for (let i = 0;i < columnPositions.length; i++) {
-    const col = columnPositions[i];
-    if (col !== undefined && Math.abs(x - col) <= tolerance) {
-      return i;
-    }
-  }
-  return -1;
-};
-
-// src/pdf/text.ts
-var normalizeLine = (input, options) => {
-  const { preserveWhitespace = false, trimLines = true } = options;
-  let normalized = preserveWhitespace ? input : input.replace(/\s+/g, " ");
-  if (trimLines) {
-    normalized = normalized.trim();
-  }
-  return normalized;
-};
-var buildNormalizedPageText = (items, options) => {
-  const {
-    preserveWhitespace = false,
-    trimLines = true,
-    maxCharsPerPage,
-    insertMarkers = false
-  } = options;
-  const normalizedLines = [];
-  let truncated = false;
-  let consumed = 0;
-  const itemsToProcess = insertMarkers ? items : items.filter((item) => item.type === "text");
-  const tableRegions = insertMarkers ? detectTables(items) : [];
-  const tableStartIndices = new Set(tableRegions.map((t) => t.startIndex));
-  const tableInfo = new Map(tableRegions.map((t) => [t.startIndex, { cols: t.cols, rows: t.rows }]));
-  for (let i = 0;i < itemsToProcess.length; i++) {
-    const item = itemsToProcess[i];
-    if (!item)
-      continue;
-    const originalIndex = items.indexOf(item);
-    if (insertMarkers && tableStartIndices.has(originalIndex)) {
-      const info = tableInfo.get(originalIndex);
-      if (info) {
-        const tableMarker = `[TABLE DETECTED: ${info.cols} cols × ${info.rows} rows]`;
-        if (normalizedLines.length > 0) {
-          normalizedLines.push("");
-        }
-        normalizedLines.push(tableMarker);
-        normalizedLines.push("");
-      }
-    }
-    let lineToAdd = "";
-    if (item.type === "text" && item.textContent) {
-      const content = item.textContent ?? "";
-      const normalized = normalizeLine(content, { preserveWhitespace, trimLines });
-      if (!normalized) {
-        continue;
-      }
-      lineToAdd = normalized;
-    } else if (item.type === "image" && insertMarkers && item.imageData) {
-      const { index, width, height, format } = item.imageData;
-      lineToAdd = `[IMAGE ${index}: ${width}x${height}px${format ? `, ${format}` : ""}]`;
-      if (normalizedLines.length > 0) {
-        normalizedLines.push("");
-      }
-    } else {
-      continue;
-    }
-    if (maxCharsPerPage !== undefined) {
-      const remaining = maxCharsPerPage - consumed;
-      if (remaining <= 0) {
-        truncated = true;
-        break;
-      }
-      if (lineToAdd.length > remaining) {
-        lineToAdd = lineToAdd.slice(0, remaining);
-        truncated = true;
-      }
-      consumed += lineToAdd.length;
-    }
-    if (lineToAdd) {
-      normalizedLines.push(lineToAdd);
-      if (item.type === "image" && insertMarkers) {
-        normalizedLines.push("");
-      }
-    }
-  }
-  const text2 = normalizedLines.join(`
-`);
-  if (maxCharsPerPage !== undefined && consumed > maxCharsPerPage) {
-    truncated = true;
-  }
-  return { lines: normalizedLines, text: text2, truncated };
-};
-
-// src/schemas/pdfRead.ts
-import {
-  array as array3,
-  bool,
-  description as description3,
-  gte as gte2,
-  int as int2,
-  num as num2,
-  object as object3,
-  optional as optional3
-} from "@sylphx/vex";
-var pdfReadArgsSchema = object3({
-  sources: array3(pdfSourceSchema),
-  include_image_indexes: optional3(bool(description3("Include image indexes for each page (no image data is returned)."))),
-  insert_markers: optional3(bool(description3("Insert [IMAGE] and [TABLE] markers inline with text at their approximate positions. " + "Helps identify pages with complex content that may need OCR."))),
-  max_chars_per_page: optional3(num2(int2, gte2(1), description3("Maximum characters to return per page before truncating."))),
-  preserve_whitespace: optional3(bool(description3("Preserve original whitespace from the PDF."))),
-  trim_lines: optional3(bool(description3("Trim leading/trailing whitespace for each text line."))),
-  allow_full_document: optional3(bool(description3("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
-});
-
-// src/utils/cache.ts
-class LruCache {
-  options;
-  store = new Map;
-  evictions = 0;
-  constructor(options) {
-    this.options = options;
-  }
-  get size() {
-    return this.store.size;
-  }
-  get evictionCount() {
-    return this.evictions;
-  }
-  getKeys() {
-    return Array.from(this.store.keys());
-  }
-  clear() {
-    this.store.clear();
-  }
-  isExpired(entry) {
-    if (!this.options.ttlMs)
-      return false;
-    return Date.now() - entry.createdAt > this.options.ttlMs;
-  }
-  markRecentlyUsed(key, entry) {
-    this.store.delete(key);
-    this.store.set(key, entry);
-  }
-  trimToMaxEntries() {
-    while (this.store.size > this.options.maxEntries) {
-      const oldestKey = this.store.keys().next().value;
-      if (!oldestKey)
-        return;
-      this.store.delete(oldestKey);
-      this.evictions += 1;
-    }
-  }
-  get(key) {
-    const entry = this.store.get(key);
-    if (!entry)
-      return;
-    if (this.isExpired(entry)) {
-      this.store.delete(key);
-      this.evictions += 1;
-      return;
-    }
-    this.markRecentlyUsed(key, entry);
-    return entry.value;
-  }
-  set(key, value) {
-    const entry = { value, createdAt: Date.now() };
-    if (this.store.has(key)) {
-      this.store.delete(key);
-    }
-    this.store.set(key, entry);
-    this.trimToMaxEntries();
-  }
-}
-var DEFAULT_CACHE_OPTIONS = {
-  text: { maxEntries: 500 },
-  ocr: { maxEntries: 500 }
-};
-var cacheOptions = {
-  text: { ...DEFAULT_CACHE_OPTIONS.text },
-  ocr: { ...DEFAULT_CACHE_OPTIONS.ocr }
-};
-var buildCache = (scope) => new LruCache(cacheOptions[scope]);
-var textCache = buildCache("text");
-var ocrCache = buildCache("ocr");
-var buildPageKey = (fingerprint, page, options) => {
-  const serializedOptions = JSON.stringify({
-    includeImageIndexes: options.includeImageIndexes,
-    preserveWhitespace: options.preserveWhitespace,
-    trimLines: options.trimLines,
-    maxCharsPerPage: options.maxCharsPerPage ?? null
-  });
-  return `${fingerprint}#page#${page}#${serializedOptions}`;
-};
-var buildOcrProviderKey = (provider) => provider ? JSON.stringify({
-  name: provider.name,
-  type: provider.type,
-  endpoint: provider.endpoint,
-  model: provider.model,
-  language: provider.language,
-  extras: provider.extras
-}) : "default";
-var buildOcrKey = (fingerprint, target) => `${fingerprint}#${target}`;
-var getCachedPageText = (fingerprint, page, options) => {
-  if (!fingerprint)
-    return;
-  return textCache.get(buildPageKey(fingerprint, page, options));
-};
-var setCachedPageText = (fingerprint, page, options, value) => {
-  if (!fingerprint)
-    return;
-  textCache.set(buildPageKey(fingerprint, page, options), value);
-};
-var getCachedOcrText = (fingerprint, target) => {
-  if (!fingerprint)
-    return;
-  return ocrCache.get(buildOcrKey(fingerprint, target));
-};
-var setCachedOcrText = (fingerprint, target, value) => {
-  if (!fingerprint)
-    return;
-  ocrCache.set(buildOcrKey(fingerprint, target), value);
-};
-var clearCache = (scope) => {
-  const clearText = scope === "text" || scope === "all";
-  const clearOcr = scope === "ocr" || scope === "all";
-  if (clearText) {
-    textCache.clear();
-  }
-  if (clearOcr) {
-    ocrCache.clear();
-  }
-  return { cleared_text: clearText, cleared_ocr: clearOcr };
-};
-
-// src/utils/fingerprint.ts
-import crypto from "node:crypto";
-var getDocumentFingerprint = (pdfDocument, sourceDescription) => {
-  const fingerprint = pdfDocument.fingerprints?.[0];
-  if (fingerprint)
-    return fingerprint;
-  const fallback = `${sourceDescription}-${pdfDocument.numPages}`;
-  return crypto.createHash("sha256").update(fallback).digest("hex");
-};
-
-// src/handlers/pdfRead.ts
-var logger7 = createLogger("PdfRead");
-var processPage = async (pdfDocument, pageNum, sourceDescription, options, fingerprint, pageLabel) => {
-  const cached = getCachedPageText(fingerprint, pageNum, options);
-  if (cached) {
-    return cached;
-  }
-  const shouldIncludeImages = options.includeImageIndexes || options.insertMarkers;
-  const { items } = await extractPageContent(pdfDocument, pageNum, shouldIncludeImages, sourceDescription);
-  const normalized = buildNormalizedPageText(items, {
-    preserveWhitespace: options.preserveWhitespace,
-    trimLines: options.trimLines,
-    insertMarkers: options.insertMarkers,
-    ...options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}
-  });
-  const pageEntry = {
-    page_number: pageNum,
-    page_index: pageNum - 1,
-    page_label: pageLabel ?? null,
-    lines: normalized.lines,
-    text: normalized.text
-  };
-  if (normalized.truncated) {
-    pageEntry.truncated = true;
-  }
-  if (options.includeImageIndexes) {
-    const imageIndexes = items.filter((item) => item.type === "image" && item.imageData).map((item) => item.imageData?.index).filter((value) => value !== undefined);
-    if (imageIndexes.length > 0) {
-      pageEntry.image_indexes = imageIndexes;
-    }
-  }
-  setCachedPageText(fingerprint, pageNum, options, pageEntry);
-  return pageEntry;
-};
-var getPageLabelsSafe = async (pdfDocument, sourceDescription) => {
-  try {
-    return await pdfDocument.getPageLabels();
-  } catch (labelError) {
-    const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger7.warn("Error retrieving page labels", { sourceDescription, error: message });
-  }
-  return null;
-};
-var collectPages = async (pdfDocument, pagesToProcess, pageLabels, sourceDescription, options, fingerprint) => {
-  const pages = [];
-  const truncatedPages = [];
-  for (const pageNum of pagesToProcess) {
-    const label = pageLabels?.[pageNum - 1] ?? null;
-    const pageData = await processPage(pdfDocument, pageNum, sourceDescription, options, fingerprint, label);
-    if (pageData.truncated) {
-      truncatedPages.push(pageNum);
-    }
-    pages.push(pageData);
-  }
-  return { pages, truncatedPages };
-};
-var destroyPdfDocument = async (pdfDocument, sourceDescription) => {
-  if (!pdfDocument || typeof pdfDocument.destroy !== "function") {
-    return;
-  }
-  try {
-    await pdfDocument.destroy();
-  } catch (destroyError) {
-    const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger7.warn("Error destroying PDF document", { sourceDescription, error: message });
-  }
-};
-var processSourcePages = async (source, sourceDescription, options, allowFullDocument) => {
-  let pdfDocument = null;
-  let result = { source: sourceDescription, success: false };
-  try {
-    const targetPages = getTargetPages(source.pages, sourceDescription);
-    const loadArgs = {
-      ...source.path ? { path: source.path } : {},
-      ...source.url ? { url: source.url } : {}
-    };
-    pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
-    const totalPages = pdfDocument.numPages;
-    const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
-    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(targetPages, totalPages, true, {
-      allowFullDocument,
-      samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT
-    });
-    const pageLabels = await getPageLabelsSafe(pdfDocument, sourceDescription);
-    const { pages, truncatedPages } = await collectPages(pdfDocument, pagesToProcess, pageLabels, sourceDescription, options, fingerprint);
-    const warnings = [
-      ...rangeWarnings ?? [],
-      ...buildWarnings(invalidPages, totalPages),
-      ...guardWarning ? [guardWarning] : []
-    ];
-    result = {
-      source: sourceDescription,
-      success: true,
-      data: {
-        pages,
-        ...warnings.length > 0 ? { warnings } : {},
-        ...truncatedPages.length > 0 ? { truncated_pages: truncatedPages } : {}
-      }
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    result = {
-      source: sourceDescription,
-      success: false,
-      error: `Failed to read pages from ${sourceDescription}. Reason: ${message}`
-    };
-  } finally {
-    await destroyPdfDocument(pdfDocument, sourceDescription);
-  }
-  return result;
-};
-var pdfRead = tool2().description(`STAGE 1: Extract text from PDF pages
-
-` + `ALWAYS USE THIS FIRST before other tools.
-
-` + "Returns structured text with line-by-line content. Use insert_markers=true to see where [IMAGE] and [TABLE] markers appear - " + `if you see these markers, you may need Stage 2 (pdf_extract_image) or Stage 3 (pdf_ocr) for those specific elements.
-
-` + `Example:
-` + '  pdf_read({sources: [{path: "doc.pdf", pages: "1-5"}], insert_markers: true})').input(pdfReadArgsSchema).handler(async ({ input }) => {
-  const {
-    sources,
-    include_image_indexes,
-    insert_markers,
-    max_chars_per_page,
-    preserve_whitespace,
-    trim_lines,
-    allow_full_document
-  } = input;
-  const options = {
-    includeImageIndexes: include_image_indexes ?? false,
-    insertMarkers: insert_markers ?? false,
-    preserveWhitespace: preserve_whitespace ?? false,
-    trimLines: trim_lines ?? true,
-    ...max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}
-  };
-  const MAX_CONCURRENT_SOURCES = 3;
-  const results = [];
-  for (let i = 0;i < sources.length; i += MAX_CONCURRENT_SOURCES) {
-    const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES);
-    const batchResults = await Promise.all(batch.map((source) => {
-      const sourceDescription = source.path ?? source.url ?? "unknown source";
-      return processSourcePages(source, sourceDescription, options, allow_full_document ?? false);
-    }));
-    results.push(...batchResults);
-  }
-  if (results.every((r) => !r.success)) {
-    const errors = results.map((r) => r.error).join("; ");
-    return toolError2(`All sources failed to return page content: ${errors}`);
-  }
-  return [text2(JSON.stringify({ results }, null, 2))];
-});
-
-// src/handlers/extractImage.ts
-import { image, text as text3, tool as tool3, toolError as toolError3 } from "@sylphx/mcp-server-sdk";
-
-// src/schemas/extractImage.ts
-import { description as description4, gte as gte3, int as int3, num as num3, object as object4 } from "@sylphx/vex";
-var extractImageArgsSchema = object4({
-  source: pdfSourceSchema,
-  page: num3(int3, gte3(1), description4("1-based page number containing the image.")),
-  index: num3(int3, gte3(0), description4("0-based image index within the page."))
-});
-
-// src/utils/ocrRecommendation.ts
-var OCR_IMAGE_RECOMMENDATION = "⚠️ For text extraction from this image, consider using pdf_ocr_image with Mistral OCR (faster, cheaper, cached). Manual image analysis via LLMs like Claude is more expensive, does not create persistent cache files, and is less precise for text extraction.";
-
-// src/handlers/extractImage.ts
-var logger8 = createLogger("ExtractImage");
-var buildImageMetadata = (targetImage, warnings) => ({
-  page: targetImage.page,
-  index: targetImage.index,
-  width: targetImage.width,
-  height: targetImage.height,
-  format: targetImage.format,
-  recommendation: OCR_IMAGE_RECOMMENDATION,
-  warnings: warnings.length > 0 ? warnings : undefined
-});
-var resolveTargetPages = (sourcePages, sourceDescription, page) => {
-  const targetPages = getTargetPages(sourcePages, sourceDescription);
-  const pages = targetPages.pages ? [...targetPages.pages] : [];
-  if (!pages.includes(page)) {
-    pages.push(page);
-  }
-  return { ...targetPages, pages };
-};
-var fetchImage = async (source, sourceDescription, page, index) => {
-  const loadArgs = {
-    ...source.path ? { path: source.path } : {},
-    ...source.url ? { url: source.url } : {}
-  };
-  return withPdfDocument(loadArgs, sourceDescription, async (pdfDocument) => {
-    const totalPages = pdfDocument.numPages;
-    if (page < 1 || page > totalPages) {
-      throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
-    }
-    const { pagesToProcess, invalidPages, rangeWarnings } = determinePagesToProcess(resolveTargetPages(source.pages, sourceDescription, page), totalPages, false);
-    if (!pagesToProcess.includes(page)) {
-      throw new Error(`Requested page ${page} exceeds total pages (${totalPages}).`);
-    }
-    const { images: pageImages, warnings: imageWarnings } = await extractImages(pdfDocument, [
-      page
-    ]);
-    const targetImage = pageImages.find((img) => img.index === index && img.page === page);
-    if (!targetImage) {
-      throw new Error(`Image with index ${index} not found on page ${page}.`);
-    }
-    const warnings = [
-      ...rangeWarnings ?? [],
-      ...buildWarnings(invalidPages, totalPages),
-      ...imageWarnings
-    ];
-    return { metadata: buildImageMetadata(targetImage, warnings), imageData: targetImage.data };
-  });
-};
-var pdfExtractImage = tool3().description(`STAGE 2: Extract image from PDF for Vision analysis
-
-` + `Use AFTER Stage 1 (pdf_read) when you see [IMAGE] markers or image_indexes in the text.
-
-` + "Returns base64-encoded PNG image that you can analyze with your Vision capabilities. " + `If the image contains text that Vision cannot read clearly, use Stage 3 (pdf_ocr) instead.
-
-` + `Example:
-` + '  pdf_extract_image({source: {path: "doc.pdf"}, page: 5, index: 0})').input(extractImageArgsSchema).handler(async ({ input }) => {
-  const { source, page, index } = input;
-  const sourceDescription = source.path ?? source.url ?? "unknown source";
-  const normalizedSource = {
-    ...source.path ? { path: source.path } : {},
-    ...source.url ? { url: source.url } : {},
-    ...source.pages !== undefined ? { pages: source.pages } : {}
-  };
-  try {
-    const result = await fetchImage(normalizedSource, sourceDescription, page, index);
-    return [text3(JSON.stringify(result.metadata, null, 2)), image(result.imageData, "image/png")];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger8.error("Failed to fetch image", { sourceDescription, page, index, error: message });
-    return toolError3(`Failed to fetch image from ${sourceDescription}. Reason: ${message}`);
+    return toolError3(JSON.stringify(errorResult));
   }
 });
 
@@ -1604,7 +1193,7 @@ import { image as image2, text as text4, tool as tool4, toolError as toolError4 
 import { OPS as OPS3 } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 // src/pdf/render.ts
-var logger9 = createLogger("Renderer");
+var logger8 = createLogger("Renderer");
 var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
   const page = await pdfDocument.getPage(pageNum);
   const viewport = page.getViewport({ scale });
@@ -1619,7 +1208,7 @@ var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
     await page.render(renderContext).promise;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger9.error("Error rendering page", { pageNum, error: message });
+    logger8.error("Error rendering page", { pageNum, error: message });
     throw error;
   }
   const pngBuffer = await canvas.encode("png");
@@ -1633,20 +1222,21 @@ var renderPageToPng = async (pdfDocument, pageNum, scale = 1.5) => {
 };
 
 // src/schemas/pdfOcr.ts
-import { bool as bool2, description as description5, gte as gte4, int as int4, num as num4, object as object5, optional as optional4 } from "@sylphx/vex";
+import { bool, description as description5, gte as gte3, int as int3, num as num3, object as object5, optional as optional4 } from "@sylphx/vex";
 var pdfOcrArgsSchema = object5({
   source: pdfSourceSchema,
-  page: num4(int4, gte4(1), description5("1-based page number.")),
-  index: optional4(num4(int4, gte4(0), description5("0-based image index within the page. If provided, OCR will be performed on the specific image. If omitted, OCR will be performed on the entire rendered page."))),
-  scale: optional4(num4(gte4(0.1), description5("Rendering scale applied before OCR (only for page OCR)."))),
-  cache: optional4(bool2(description5("Use cached OCR result when available. Defaults to true."))),
-  smart_ocr: optional4(bool2(description5("Enable smart OCR decision step to skip OCR when likely unnecessary (only for page OCR).")))
+  page: num3(int3, gte3(1), description5("1-based page number.")),
+  index: optional4(num3(int3, gte3(0), description5("0-based image index within the page. If provided, OCR will be performed on the specific image. If omitted, OCR will be performed on the entire rendered page."))),
+  scale: optional4(num3(gte3(0.1), description5("Rendering scale applied before OCR (only for page OCR)."))),
+  cache: optional4(bool(description5("Use cached OCR result when available. Defaults to true."))),
+  smart_ocr: optional4(bool(description5("Enable smart OCR decision step to skip OCR when likely unnecessary (only for page OCR).")))
 });
 
 // src/utils/diskCache.ts
 import fs2 from "node:fs";
+import fsPromises from "node:fs/promises";
 import path2 from "node:path";
-var logger10 = createLogger("DiskCache");
+var logger9 = createLogger("DiskCache");
 var LOCK_RETRY_MS = 25;
 var LOCK_TIMEOUT_MS = 5000;
 var getCacheFilePath = (pdfPath) => {
@@ -1663,10 +1253,10 @@ var loadOcrCache = (pdfPath) => {
     const content = fs2.readFileSync(cachePath, "utf-8");
     const cache = JSON.parse(content);
     if (!cache.fingerprint || !cache.pages || !cache.images) {
-      logger10.warn("Invalid cache file structure", { cachePath });
+      logger9.warn("Invalid cache file structure", { cachePath });
       return null;
     }
-    logger10.debug("Loaded OCR cache from disk", {
+    logger9.debug("Loaded OCR cache from disk", {
       cachePath,
       pageCount: Object.keys(cache.pages).length,
       imageCount: Object.keys(cache.images).length
@@ -1674,45 +1264,49 @@ var loadOcrCache = (pdfPath) => {
     return cache;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger10.warn("Failed to load OCR cache", { cachePath, error: message });
+    logger9.warn("Failed to load OCR cache", { cachePath, error: message });
     return null;
   }
 };
-var sleepSync = (ms) => {
-  const array4 = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(array4, 0, 0, ms);
+var sleep = (ms) => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };
-var acquireCacheLock = (lockPath) => {
+var acquireCacheLock = async (lockPath) => {
   const start = Date.now();
   while (true) {
     try {
-      return fs2.openSync(lockPath, "wx");
+      const handle = await fsPromises.open(lockPath, "wx");
+      return handle;
     } catch (error) {
       const err = error;
       if (err.code === "EEXIST") {
         if (Date.now() - start > LOCK_TIMEOUT_MS) {
           throw new Error(`Timed out waiting for cache lock at ${lockPath}`);
         }
-        sleepSync(LOCK_RETRY_MS);
+        await sleep(LOCK_RETRY_MS);
         continue;
       }
       throw error;
     }
   }
 };
-var releaseCacheLock = (lockPath, fd) => {
-  fs2.closeSync(fd);
-  fs2.rmSync(lockPath, { force: true });
+var releaseCacheLock = async (lockPath, handle) => {
+  if (handle) {
+    await handle.close();
+  }
+  await fsPromises.rm(lockPath, { force: true });
 };
-var writeCacheFile = (cachePath, cache) => {
+var writeCacheFile = async (cachePath, cache) => {
   cache.updated_at = new Date().toISOString();
   const dir = path2.dirname(cachePath);
-  if (!fs2.existsSync(dir)) {
-    fs2.mkdirSync(dir, { recursive: true });
+  try {
+    await fsPromises.access(dir);
+  } catch {
+    await fsPromises.mkdir(dir, { recursive: true });
   }
   const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
-  fs2.writeFileSync(tempPath, JSON.stringify(cache, null, 2), "utf-8");
-  fs2.renameSync(tempPath, cachePath);
+  await fsPromises.writeFile(tempPath, JSON.stringify(cache, null, 2), "utf-8");
+  await fsPromises.rename(tempPath, cachePath);
 };
 var mergeCaches = (existing, incoming) => {
   const now = new Date().toISOString();
@@ -1734,25 +1328,25 @@ var mergeCaches = (existing, incoming) => {
     images: incoming.images ?? {}
   };
 };
-var saveOcrCache = (pdfPath, cache) => {
+var saveOcrCache = async (pdfPath, cache) => {
   const cachePath = getCacheFilePath(pdfPath);
   const lockPath = `${cachePath}.lock`;
-  const lockFd = acquireCacheLock(lockPath);
+  const lockHandle = await acquireCacheLock(lockPath);
   try {
     const latest = loadOcrCache(pdfPath);
     const merged = mergeCaches(latest, cache);
-    writeCacheFile(cachePath, merged);
-    logger10.debug("Saved OCR cache to disk", {
+    await writeCacheFile(cachePath, merged);
+    logger9.debug("Saved OCR cache to disk", {
       cachePath,
       pageCount: Object.keys(merged.pages).length,
       imageCount: Object.keys(merged.images).length
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger10.error("Failed to save OCR cache", { cachePath, error: message });
+    logger9.error("Failed to save OCR cache", { cachePath, error: message });
     throw new Error(`Failed to save OCR cache: ${message}`);
   } finally {
-    releaseCacheLock(lockPath, lockFd);
+    await releaseCacheLock(lockPath, lockHandle);
   }
 };
 var getCachedOcrPage = (pdfPath, fingerprint, page, providerHash) => {
@@ -1761,7 +1355,7 @@ var getCachedOcrPage = (pdfPath, fingerprint, page, providerHash) => {
     return null;
   }
   if (cache.fingerprint !== fingerprint) {
-    logger10.warn("PDF fingerprint mismatch, cache invalidated", {
+    logger9.warn("PDF fingerprint mismatch, cache invalidated", {
       pdfPath,
       cached: cache.fingerprint,
       current: fingerprint
@@ -1774,13 +1368,13 @@ var getCachedOcrPage = (pdfPath, fingerprint, page, providerHash) => {
     return null;
   }
   if (result.provider_hash !== providerHash) {
-    logger10.debug("Provider hash mismatch for page", { page, pageKey });
+    logger9.debug("Provider hash mismatch for page", { page, pageKey });
     return null;
   }
-  logger10.debug("Cache hit for page", { page });
+  logger9.debug("Cache hit for page", { page });
   return result;
 };
-var setCachedOcrPage = (pdfPath, fingerprint, page, providerHash, ocrProvider, result) => {
+var setCachedOcrPage = async (pdfPath, fingerprint, page, providerHash, ocrProvider, result) => {
   let cache = loadOcrCache(pdfPath);
   if (!cache) {
     cache = {
@@ -1794,7 +1388,7 @@ var setCachedOcrPage = (pdfPath, fingerprint, page, providerHash, ocrProvider, r
     };
   }
   if (cache.fingerprint !== fingerprint) {
-    logger10.warn("PDF fingerprint changed, resetting cache", { pdfPath });
+    logger9.warn("PDF fingerprint changed, resetting cache", { pdfPath });
     cache = {
       fingerprint,
       pdf_path: pdfPath,
@@ -1811,8 +1405,8 @@ var setCachedOcrPage = (pdfPath, fingerprint, page, providerHash, ocrProvider, r
     provider_hash: providerHash,
     cached_at: new Date().toISOString()
   };
-  saveOcrCache(pdfPath, cache);
-  logger10.debug("Cached OCR result for page", { page });
+  await saveOcrCache(pdfPath, cache);
+  logger9.debug("Cached OCR result for page", { page });
 };
 var getCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash) => {
   const cache = loadOcrCache(pdfPath);
@@ -1820,7 +1414,7 @@ var getCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash) =
     return null;
   }
   if (cache.fingerprint !== fingerprint) {
-    logger10.warn("PDF fingerprint mismatch, cache invalidated", {
+    logger9.warn("PDF fingerprint mismatch, cache invalidated", {
       pdfPath,
       cached: cache.fingerprint,
       current: fingerprint
@@ -1833,13 +1427,13 @@ var getCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash) =
     return null;
   }
   if (result.provider_hash !== providerHash) {
-    logger10.debug("Provider hash mismatch for image", { page, imageIndex });
+    logger9.debug("Provider hash mismatch for image", { page, imageIndex });
     return null;
   }
-  logger10.debug("Cache hit for image", { page, imageIndex });
+  logger9.debug("Cache hit for image", { page, imageIndex });
   return result;
 };
-var setCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash, ocrProvider, result) => {
+var setCachedOcrImage = async (pdfPath, fingerprint, page, imageIndex, providerHash, ocrProvider, result) => {
   let cache = loadOcrCache(pdfPath);
   if (!cache) {
     cache = {
@@ -1853,7 +1447,7 @@ var setCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash, o
     };
   }
   if (cache.fingerprint !== fingerprint) {
-    logger10.warn("PDF fingerprint changed, resetting cache", { pdfPath });
+    logger9.warn("PDF fingerprint changed, resetting cache", { pdfPath });
     cache = {
       fingerprint,
       pdf_path: pdfPath,
@@ -1870,8 +1464,18 @@ var setCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash, o
     provider_hash: providerHash,
     cached_at: new Date().toISOString()
   };
-  saveOcrCache(pdfPath, cache);
-  logger10.debug("Cached OCR result for image", { page, imageIndex });
+  await saveOcrCache(pdfPath, cache);
+  logger9.debug("Cached OCR result for image", { page, imageIndex });
+};
+
+// src/utils/fingerprint.ts
+import crypto from "node:crypto";
+var getDocumentFingerprint = (pdfDocument, sourceDescription) => {
+  const fingerprint = pdfDocument.fingerprints?.[0];
+  if (fingerprint)
+    return fingerprint;
+  const fallback = `${sourceDescription}-${pdfDocument.numPages}`;
+  return crypto.createHash("sha256").update(fallback).digest("hex");
 };
 
 // src/utils/ocr.ts
@@ -2155,7 +1759,7 @@ function buildNextStep2(context) {
 }
 
 // src/handlers/pdfOcr.ts
-var logger11 = createLogger("PdfOcr");
+var logger10 = createLogger("PdfOcr");
 var SMART_OCR_MIN_TEXT_LENGTH = 50;
 var SMART_OCR_MAX_TEXT_LENGTH = 1000;
 var SMART_OCR_NON_ASCII_RATIO = 0.3;
@@ -2255,7 +1859,7 @@ var checkDiskCacheForPage = (sourcePath, fingerprint, page, providerKey, provide
     text: diskCached.text,
     provider: providerName
   });
-  logger11.debug("Loaded OCR result from disk cache", { page, path: sourcePath });
+  logger10.debug("Loaded OCR result from disk cache", { page, path: sourcePath });
   return {
     success: true,
     result: {
@@ -2281,7 +1885,7 @@ var checkDiskCacheForImage = (sourcePath, fingerprint, page, index, providerKey,
     text: diskCached.text,
     provider: providerName
   });
-  logger11.debug("Loaded OCR result from disk cache", { page, index, path: sourcePath });
+  logger10.debug("Loaded OCR result from disk cache", { page, index, path: sourcePath });
   return {
     success: true,
     result: {
@@ -2333,12 +1937,12 @@ var executePageOcrAndCache = async (pdfDocument, page, scale, provider, fingerpr
   const ocr = await performOcr(imageData, provider);
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
   if (sourcePath) {
-    setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
+    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
       text: ocr.text,
       provider_hash: providerKey,
       cached_at: new Date().toISOString()
     });
-    logger11.debug("Saved OCR result to disk cache", { page, path: sourcePath });
+    logger10.debug("Saved OCR result to disk cache", { page, path: sourcePath });
   }
   return {
     success: true,
@@ -2359,7 +1963,7 @@ var performPageOcr = async (source, sourceDescription, page, provider, scale, sm
   const providerKey = buildOcrProviderKey(provider);
   const cacheKey = `page-${page}#scale-${scale ?? 1}#provider-${providerKey}`;
   if (!provider) {
-    logger11.info("No OCR provider configured, returning rendered page image", { page });
+    logger10.info("No OCR provider configured, returning rendered page image", { page });
     const { data: imageData } = await renderPageToPng(pdfDocument, page, scale ?? 1);
     return {
       success: false,
@@ -2393,7 +1997,7 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
     throw new Error(`Image with index ${index} not found on page ${page}.`);
   }
   if (!provider) {
-    logger11.info("No OCR provider configured, returning extracted image", { page, index });
+    logger10.info("No OCR provider configured, returning extracted image", { page, index });
     return {
       success: false,
       imageData: target.data,
@@ -2417,12 +2021,12 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
   const ocr = await performOcr(target.data, provider);
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
   if (source.path) {
-    setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
+    await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
       text: ocr.text,
       provider_hash: providerKey,
       cached_at: new Date().toISOString()
     });
-    logger11.debug("Saved OCR result to disk cache", { page, index, path: source.path });
+    logger10.debug("Saved OCR result to disk cache", { page, index, path: source.path });
   }
   return {
     success: true,
@@ -2484,38 +2088,459 @@ var pdfOcr = tool4().description(`STAGE 3: OCR for text in images
     return [text4(JSON.stringify({ ...result.result, next_step: nextStep }, null, 2))];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger11.error("Failed to perform OCR", { sourceDescription, page, index, error: message });
+    logger10.error("Failed to perform OCR", { sourceDescription, page, index, error: message });
     return toolError4(`Failed to perform OCR on ${sourceDescription}. Reason: ${message}`);
   }
 });
 
-// src/handlers/searchPdf.ts
+// src/handlers/pdfRead.ts
 import { text as text5, tool as tool5, toolError as toolError5 } from "@sylphx/mcp-server-sdk";
+
+// src/pdf/tableDetection.ts
+var detectTables = (items) => {
+  const tables = [];
+  const textItems = items.filter((item) => item.type === "text" && item.xPosition !== undefined);
+  if (textItems.length < 9) {
+    return tables;
+  }
+  let startIndex = 0;
+  while (startIndex < textItems.length) {
+    const tableCandidate = analyzeTableCandidate(textItems, startIndex);
+    if (tableCandidate) {
+      const originalStartIndex = items.indexOf(textItems[startIndex]);
+      const originalEndIndex = items.indexOf(textItems[tableCandidate.endIndex]);
+      tables.push({
+        startIndex: originalStartIndex,
+        endIndex: originalEndIndex,
+        cols: tableCandidate.cols,
+        rows: tableCandidate.rows
+      });
+      startIndex = tableCandidate.endIndex + 1;
+    } else {
+      startIndex++;
+    }
+  }
+  return tables;
+};
+var analyzeTableCandidate = (items, startIndex) => {
+  const MIN_COLUMNS = 3;
+  const MIN_ROWS = 3;
+  const MAX_ITEMS_TO_CHECK = 50;
+  const MIN_TOLERANCE = 10;
+  const MAX_TOLERANCE = 50;
+  const checkRange = Math.min(items.length - startIndex, MAX_ITEMS_TO_CHECK);
+  if (checkRange < MIN_COLUMNS * MIN_ROWS) {
+    return null;
+  }
+  const itemsInRange = items.slice(startIndex, startIndex + checkRange);
+  const avgFontSize = calculateAverageFontSize(itemsInRange);
+  const estimatedPageWidth = estimatePageWidth(itemsInRange);
+  const fontBasedTolerance = avgFontSize * 0.5;
+  const pageWidthTolerance = estimatedPageWidth ? estimatedPageWidth * 0.05 : 0;
+  const COLUMN_TOLERANCE = clamp(Math.max(fontBasedTolerance, pageWidthTolerance), MIN_TOLERANCE, MAX_TOLERANCE);
+  const xPositions = [];
+  for (const item of itemsInRange) {
+    const x = item.xPosition;
+    if (x !== undefined) {
+      xPositions.push(x);
+    }
+  }
+  const columnPositions = clusterXPositions(xPositions, COLUMN_TOLERANCE);
+  if (columnPositions.length < MIN_COLUMNS) {
+    return null;
+  }
+  const rowsByY = new Map;
+  for (const item of itemsInRange) {
+    if (item.xPosition === undefined)
+      continue;
+    const columnIndex = findColumnIndex(item.xPosition, columnPositions, COLUMN_TOLERANCE);
+    if (columnIndex === -1)
+      continue;
+    const y = item.yPosition;
+    if (!rowsByY.has(y)) {
+      rowsByY.set(y, []);
+    }
+    rowsByY.get(y)?.push(columnIndex);
+  }
+  const validRows = Array.from(rowsByY.values()).filter((cols) => cols.length >= MIN_COLUMNS - 1);
+  if (validRows.length < MIN_ROWS) {
+    return null;
+  }
+  const tableYPositions = Array.from(rowsByY.keys()).slice(0, validRows.length);
+  const lastY = tableYPositions[tableYPositions.length - 1];
+  if (lastY === undefined)
+    return null;
+  const endIndex = itemsInRange.findIndex((item) => item.yPosition < (lastY ?? 0));
+  const actualEndIndex = endIndex === -1 ? startIndex + checkRange - 1 : startIndex + endIndex - 1;
+  return {
+    endIndex: actualEndIndex,
+    cols: columnPositions.length,
+    rows: validRows.length
+  };
+};
+var calculateAverageFontSize = (items) => {
+  const fontSizes = items.map((item) => item.fontSize).filter((value) => typeof value === "number" && value > 0);
+  if (fontSizes.length > 0) {
+    return fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length;
+  }
+  const averageCharWidth = estimateAverageCharacterWidth(items);
+  if (averageCharWidth > 0) {
+    return averageCharWidth / 0.5;
+  }
+  return 12;
+};
+var estimateAverageCharacterWidth = (items) => {
+  const rows = new Map;
+  for (const item of items) {
+    if (item.type !== "text" || item.xPosition === undefined || !item.textContent) {
+      continue;
+    }
+    if (!rows.has(item.yPosition)) {
+      rows.set(item.yPosition, []);
+    }
+    rows.get(item.yPosition)?.push(item);
+  }
+  const widthSamples = [];
+  for (const rowItems of rows.values()) {
+    rowItems.sort((a, b) => (a.xPosition ?? 0) - (b.xPosition ?? 0));
+    for (let i = 0;i < rowItems.length - 1; i++) {
+      const current = rowItems[i];
+      const next = rowItems[i + 1];
+      if (!current || !next || current.xPosition === undefined || next.xPosition === undefined) {
+        continue;
+      }
+      const textLength = current.textContent?.length ?? 0;
+      if (textLength === 0)
+        continue;
+      const deltaX = next.xPosition - current.xPosition;
+      if (deltaX <= 0)
+        continue;
+      widthSamples.push(deltaX / textLength);
+    }
+  }
+  if (widthSamples.length === 0) {
+    return 0;
+  }
+  return widthSamples.reduce((sum, value) => sum + value, 0) / widthSamples.length;
+};
+var estimatePageWidth = (items) => {
+  const xPositions = items.map((item) => item.xPosition).filter((value) => typeof value === "number");
+  if (xPositions.length < 2)
+    return null;
+  const minX = Math.min(...xPositions);
+  const maxX = Math.max(...xPositions);
+  const width = maxX - minX;
+  return width > 0 ? width : null;
+};
+var clamp = (value, min2, max) => Math.max(min2, Math.min(max, value));
+var clusterXPositions = (xPositions, tolerance) => {
+  if (xPositions.length === 0)
+    return [];
+  const sorted = [...xPositions].sort((a, b) => a - b);
+  const clusters = [sorted[0]];
+  for (const x of sorted) {
+    const lastCluster = clusters[clusters.length - 1];
+    if (lastCluster === undefined)
+      continue;
+    if (x - lastCluster > tolerance) {
+      clusters.push(x);
+    }
+  }
+  return clusters;
+};
+var findColumnIndex = (x, columnPositions, tolerance) => {
+  for (let i = 0;i < columnPositions.length; i++) {
+    const col = columnPositions[i];
+    if (col !== undefined && Math.abs(x - col) <= tolerance) {
+      return i;
+    }
+  }
+  return -1;
+};
+
+// src/pdf/text.ts
+var normalizeLine = (input, options) => {
+  const { preserveWhitespace = false, trimLines = true } = options;
+  let normalized = preserveWhitespace ? input : input.replace(/\s+/g, " ");
+  if (trimLines) {
+    normalized = normalized.trim();
+  }
+  return normalized;
+};
+var buildNormalizedPageText = (items, options) => {
+  const {
+    preserveWhitespace = false,
+    trimLines = true,
+    maxCharsPerPage,
+    insertMarkers = false
+  } = options;
+  const normalizedLines = [];
+  let truncated = false;
+  let consumed = 0;
+  const itemsToProcess = insertMarkers ? items : items.filter((item) => item.type === "text");
+  const tableRegions = insertMarkers ? detectTables(items) : [];
+  const tableStartIndices = new Set(tableRegions.map((t) => t.startIndex));
+  const tableInfo = new Map(tableRegions.map((t) => [t.startIndex, { cols: t.cols, rows: t.rows }]));
+  for (let i = 0;i < itemsToProcess.length; i++) {
+    const item = itemsToProcess[i];
+    if (!item)
+      continue;
+    const originalIndex = items.indexOf(item);
+    if (insertMarkers && tableStartIndices.has(originalIndex)) {
+      const info = tableInfo.get(originalIndex);
+      if (info) {
+        const tableMarker = `[TABLE DETECTED: ${info.cols} cols × ${info.rows} rows]`;
+        if (normalizedLines.length > 0) {
+          normalizedLines.push("");
+        }
+        normalizedLines.push(tableMarker);
+        normalizedLines.push("");
+      }
+    }
+    let lineToAdd = "";
+    if (item.type === "text" && item.textContent) {
+      const content = item.textContent ?? "";
+      const normalized = normalizeLine(content, { preserveWhitespace, trimLines });
+      if (!normalized) {
+        continue;
+      }
+      lineToAdd = normalized;
+    } else if (item.type === "image" && insertMarkers && item.imageData) {
+      const { index, width, height, format } = item.imageData;
+      lineToAdd = `[IMAGE ${index}: ${width}x${height}px${format ? `, ${format}` : ""}]`;
+      if (normalizedLines.length > 0) {
+        normalizedLines.push("");
+      }
+    } else {
+      continue;
+    }
+    if (maxCharsPerPage !== undefined) {
+      const remaining = maxCharsPerPage - consumed;
+      if (remaining <= 0) {
+        truncated = true;
+        break;
+      }
+      if (lineToAdd.length > remaining) {
+        lineToAdd = lineToAdd.slice(0, remaining);
+        truncated = true;
+      }
+      consumed += lineToAdd.length;
+    }
+    if (lineToAdd) {
+      normalizedLines.push(lineToAdd);
+      if (item.type === "image" && insertMarkers) {
+        normalizedLines.push("");
+      }
+    }
+  }
+  const text5 = normalizedLines.join(`
+`);
+  if (maxCharsPerPage !== undefined && consumed > maxCharsPerPage) {
+    truncated = true;
+  }
+  return { lines: normalizedLines, text: text5, truncated };
+};
+
+// src/schemas/pdfRead.ts
+import {
+  array as array3,
+  bool as bool2,
+  description as description6,
+  gte as gte4,
+  int as int4,
+  num as num4,
+  object as object6,
+  optional as optional5
+} from "@sylphx/vex";
+var pdfReadArgsSchema = object6({
+  sources: array3(pdfSourceSchema),
+  include_image_indexes: optional5(bool2(description6("Include image indexes for each page (no image data is returned)."))),
+  insert_markers: optional5(bool2(description6("Insert [IMAGE] and [TABLE] markers inline with text at their approximate positions. " + "Helps identify pages with complex content that may need OCR."))),
+  max_chars_per_page: optional5(num4(int4, gte4(1), description6("Maximum characters to return per page before truncating."))),
+  preserve_whitespace: optional5(bool2(description6("Preserve original whitespace from the PDF."))),
+  trim_lines: optional5(bool2(description6("Trim leading/trailing whitespace for each text line."))),
+  allow_full_document: optional5(bool2(description6("When true, allows reading the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+});
+
+// src/handlers/pdfRead.ts
+var logger11 = createLogger("PdfRead");
+var processPage = async (pdfDocument, pageNum, sourceDescription, options, fingerprint, pageLabel) => {
+  const cached = getCachedPageText(fingerprint, pageNum, options);
+  if (cached) {
+    return cached;
+  }
+  const shouldIncludeImages = options.includeImageIndexes || options.insertMarkers;
+  const { items } = await extractPageContent(pdfDocument, pageNum, shouldIncludeImages, sourceDescription);
+  const normalized = buildNormalizedPageText(items, {
+    preserveWhitespace: options.preserveWhitespace,
+    trimLines: options.trimLines,
+    insertMarkers: options.insertMarkers,
+    ...options.maxCharsPerPage !== undefined ? { maxCharsPerPage: options.maxCharsPerPage } : {}
+  });
+  const pageEntry = {
+    page_number: pageNum,
+    page_index: pageNum - 1,
+    page_label: pageLabel ?? null,
+    lines: normalized.lines,
+    text: normalized.text
+  };
+  if (normalized.truncated) {
+    pageEntry.truncated = true;
+  }
+  if (options.includeImageIndexes) {
+    const imageIndexes = items.filter((item) => item.type === "image" && item.imageData).map((item) => item.imageData?.index).filter((value) => value !== undefined);
+    if (imageIndexes.length > 0) {
+      pageEntry.image_indexes = imageIndexes;
+    }
+  }
+  setCachedPageText(fingerprint, pageNum, options, pageEntry);
+  return pageEntry;
+};
+var getPageLabelsSafe = async (pdfDocument, sourceDescription) => {
+  try {
+    return await pdfDocument.getPageLabels();
+  } catch (labelError) {
+    const message = labelError instanceof Error ? labelError.message : String(labelError);
+    logger11.warn("Error retrieving page labels", { sourceDescription, error: message });
+  }
+  return null;
+};
+var collectPages = async (pdfDocument, pagesToProcess, pageLabels, sourceDescription, options, fingerprint) => {
+  const pages = [];
+  const truncatedPages = [];
+  for (const pageNum of pagesToProcess) {
+    const label = pageLabels?.[pageNum - 1] ?? null;
+    const pageData = await processPage(pdfDocument, pageNum, sourceDescription, options, fingerprint, label);
+    if (pageData.truncated) {
+      truncatedPages.push(pageNum);
+    }
+    pages.push(pageData);
+  }
+  return { pages, truncatedPages };
+};
+var destroyPdfDocument = async (pdfDocument, sourceDescription) => {
+  if (!pdfDocument || typeof pdfDocument.destroy !== "function") {
+    return;
+  }
+  try {
+    await pdfDocument.destroy();
+  } catch (destroyError) {
+    const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
+    logger11.warn("Error destroying PDF document", { sourceDescription, error: message });
+  }
+};
+var processSourcePages = async (source, sourceDescription, options, allowFullDocument) => {
+  let pdfDocument = null;
+  let result = { source: sourceDescription, success: false };
+  try {
+    const targetPages = getTargetPages(source.pages, sourceDescription);
+    const loadArgs = {
+      ...source.path ? { path: source.path } : {},
+      ...source.url ? { url: source.url } : {}
+    };
+    pdfDocument = await loadPdfDocument(loadArgs, sourceDescription);
+    const totalPages = pdfDocument.numPages;
+    const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
+    const { pagesToProcess, invalidPages, guardWarning, rangeWarnings } = determinePagesToProcess(targetPages, totalPages, true, {
+      allowFullDocument,
+      samplePageLimit: DEFAULT_SAMPLE_PAGE_LIMIT
+    });
+    const pageLabels = await getPageLabelsSafe(pdfDocument, sourceDescription);
+    const { pages, truncatedPages } = await collectPages(pdfDocument, pagesToProcess, pageLabels, sourceDescription, options, fingerprint);
+    const warnings = [
+      ...rangeWarnings ?? [],
+      ...buildWarnings(invalidPages, totalPages),
+      ...guardWarning ? [guardWarning] : []
+    ];
+    result = {
+      source: sourceDescription,
+      success: true,
+      data: {
+        pages,
+        ...warnings.length > 0 ? { warnings } : {},
+        ...truncatedPages.length > 0 ? { truncated_pages: truncatedPages } : {}
+      }
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    result = {
+      source: sourceDescription,
+      success: false,
+      error: `Failed to read pages from ${sourceDescription}. Reason: ${message}`
+    };
+  } finally {
+    await destroyPdfDocument(pdfDocument, sourceDescription);
+  }
+  return result;
+};
+var pdfRead = tool5().description(`STAGE 1: Extract text from PDF pages
+
+` + `ALWAYS USE THIS FIRST before other tools.
+
+` + "Returns structured text with line-by-line content. Use insert_markers=true to see where [IMAGE] and [TABLE] markers appear - " + `if you see these markers, you may need Stage 2 (pdf_extract_image) or Stage 3 (pdf_ocr) for those specific elements.
+
+` + `Example:
+` + '  pdf_read({sources: [{path: "doc.pdf", pages: "1-5"}], insert_markers: true})').input(pdfReadArgsSchema).handler(async ({ input }) => {
+  const {
+    sources,
+    include_image_indexes,
+    insert_markers,
+    max_chars_per_page,
+    preserve_whitespace,
+    trim_lines,
+    allow_full_document
+  } = input;
+  const options = {
+    includeImageIndexes: include_image_indexes ?? false,
+    insertMarkers: insert_markers ?? false,
+    preserveWhitespace: preserve_whitespace ?? false,
+    trimLines: trim_lines ?? true,
+    ...max_chars_per_page !== undefined ? { maxCharsPerPage: max_chars_per_page } : {}
+  };
+  const MAX_CONCURRENT_SOURCES = 3;
+  const results = [];
+  for (let i = 0;i < sources.length; i += MAX_CONCURRENT_SOURCES) {
+    const batch = sources.slice(i, i + MAX_CONCURRENT_SOURCES);
+    const batchResults = await Promise.all(batch.map((source) => {
+      const sourceDescription = source.path ?? source.url ?? "unknown source";
+      return processSourcePages(source, sourceDescription, options, allow_full_document ?? false);
+    }));
+    results.push(...batchResults);
+  }
+  if (results.every((r) => !r.success)) {
+    const errors = results.map((r) => r.error).join("; ");
+    return toolError5(`All sources failed to return page content: ${errors}`);
+  }
+  return [text5(JSON.stringify({ results }, null, 2))];
+});
+
+// src/handlers/searchPdf.ts
+import { text as text6, tool as tool6, toolError as toolError6 } from "@sylphx/mcp-server-sdk";
 
 // src/schemas/pdfSearch.ts
 import {
   array as array4,
   bool as bool3,
-  description as description6,
+  description as description7,
   gte as gte5,
   int as int5,
   min as min2,
   num as num5,
-  object as object6,
-  optional as optional5,
-  str as str3
+  object as object7,
+  optional as optional6,
+  str as str4
 } from "@sylphx/vex";
-var pdfSearchArgsSchema = object6({
+var pdfSearchArgsSchema = object7({
   sources: array4(pdfSourceSchema),
-  query: str3(min2(1), description6("Plain text or regular expression to search for within pages.")),
-  use_regex: optional5(bool3(description6("Treat the query as a regular expression."))),
-  case_sensitive: optional5(bool3(description6("Enable case sensitive matching."))),
-  context_chars: optional5(num5(int5, gte5(0), description6("Number of characters to include before/after each match."))),
-  max_hits: optional5(num5(int5, gte5(1), description6("Maximum number of matches to return across all pages."))),
-  max_chars_per_page: optional5(num5(int5, gte5(1), description6("Truncate each page before searching to control payload size."))),
-  preserve_whitespace: optional5(bool3(description6("Preserve original whitespace when building text."))),
-  trim_lines: optional5(bool3(description6("Trim leading/trailing whitespace for each text line."))),
-  allow_full_document: optional5(bool3(description6("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+  query: str4(min2(1), description7("Plain text or regular expression to search for within pages.")),
+  use_regex: optional6(bool3(description7("Treat the query as a regular expression."))),
+  case_sensitive: optional6(bool3(description7("Enable case sensitive matching."))),
+  context_chars: optional6(num5(int5, gte5(0), description7("Number of characters to include before/after each match."))),
+  max_hits: optional6(num5(int5, gte5(1), description7("Maximum number of matches to return across all pages."))),
+  max_chars_per_page: optional6(num5(int5, gte5(1), description7("Truncate each page before searching to control payload size."))),
+  preserve_whitespace: optional6(bool3(description7("Preserve original whitespace when building text."))),
+  trim_lines: optional6(bool3(description7("Trim leading/trailing whitespace for each text line."))),
+  allow_full_document: optional6(bool3(description7("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
 });
 
 // src/handlers/searchPdf.ts
@@ -2538,15 +2563,31 @@ var findRegexMatches = (textToSearch, query, options, remaining) => {
   const flags = options.caseSensitive ? "g" : "gi";
   const regex = new RegExp(query, flags);
   const matches = [];
-  let match = regex.exec(textToSearch);
+  const MAX_REGEX_TEXT_LENGTH = 1e6;
+  const textForSearch = textToSearch.slice(0, MAX_REGEX_TEXT_LENGTH);
+  const wasTextTruncated = textToSearch.length > MAX_REGEX_TEXT_LENGTH;
+  const REGEX_TIMEOUT_MS = 5000;
+  const deadline = Date.now() + REGEX_TIMEOUT_MS;
+  let iterationCount = 0;
+  let match = regex.exec(textForSearch);
   while (match !== null && matches.length < remaining) {
+    if (++iterationCount % 100 === 0 && Date.now() > deadline) {
+      logger12.warn("Regex search exceeded timeout, stopping early", {
+        matchesFound: matches.length,
+        pattern: query
+      });
+      break;
+    }
     const matchText = match[0];
     const index = match.index;
     matches.push({ match: matchText, index });
     if (matchText.length === 0) {
       regex.lastIndex += 1;
     }
-    match = regex.exec(textToSearch);
+    match = regex.exec(textForSearch);
+  }
+  if (wasTextTruncated && matches.length === 0) {
+    logger12.info("Regex search on truncated text (1MB limit)", { pattern: query });
   }
   return matches;
 };
@@ -2664,7 +2705,7 @@ var processSearchSource = async (source, sourceDescription, options, allowFullDo
   }
   return result;
 };
-var pdfSearch = tool5().description(`Search for specific text patterns across PDF pages
+var pdfSearch = tool6().description(`Search for specific text patterns across PDF pages
 
 ` + `Use when you need to:
 ` + `- Find specific keywords, phrases, or patterns across documents
@@ -2701,13 +2742,23 @@ var pdfSearch = tool5().description(`Search for specific text patterns across PD
   };
   if (baseOptions.useRegex) {
     if (query.length > 100) {
-      return toolError5("Regex query too long (max 100 characters)");
+      return toolError6("Regex query too long (max 100 characters)");
+    }
+    const dangerousPatterns = [
+      /\([^)]*[+*]\)[+*{]/,
+      /\([^)]*\|[^)]*\)[+*{]/,
+      /\(\?:[^)]*[+*]\)[+*{]/
+    ];
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(query)) {
+        return toolError6("Regex pattern contains potentially dangerous nested quantifiers or alternations that could cause catastrophic backtracking. Please simplify your pattern.");
+      }
     }
     try {
       new RegExp(query);
     } catch (regexError) {
       const message = regexError instanceof Error ? regexError.message : String(regexError);
-      return toolError5(`Invalid regular expression: ${message}`);
+      return toolError6(`Invalid regular expression: ${message}`);
     }
   }
   const MAX_CONCURRENT_SOURCES = 3;
@@ -2731,36 +2782,25 @@ var pdfSearch = tool5().description(`Search for specific text patterns across PD
   }
   if (results.every((r) => !r.success)) {
     const errors = results.map((r) => r.error).join("; ");
-    return toolError5(`All sources failed to search: ${errors}`);
+    return toolError6(`All sources failed to search: ${errors}`);
   }
   const nextStep = buildNextStep2({ stage: "search" });
-  return [text5(JSON.stringify({ results, next_step: nextStep }, null, 2))];
-});
-
-// src/handlers/cache.ts
-import { text as text6, tool as tool6, toolError as toolError6 } from "@sylphx/mcp-server-sdk";
-
-// src/schemas/cache.ts
-import { description as description7, object as object7, optional as optional6, str as str4 } from "@sylphx/vex";
-var cacheClearArgsSchema = object7({
-  scope: optional6(str4(description7("Cache scope: text, ocr, or all. Defaults to all.")))
-});
-
-// src/handlers/cache.ts
-var pdfCacheClear = tool6().description("Clear text and/or OCR caches.").input(cacheClearArgsSchema).handler(async ({ input }) => {
-  const scope = input.scope ?? "all";
-  if (!["text", "ocr", "all"].includes(scope)) {
-    return toolError6(`Invalid scope '${scope}'. Expected one of: text, ocr, all.`);
-  }
-  const result = clearCache(scope);
-  return [text6(JSON.stringify(result, null, 2))];
+  return [text6(JSON.stringify({ results, next_step: nextStep }, null, 2))];
 });
 
 // src/index.ts
 var originalStdoutWrite = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encodingOrCallback, callback) => {
   const str5 = chunk.toString();
-  const shouldRedirectToStderr = str5.includes("Warning:") || str5.includes("Cannot polyfill") || str5.includes("DOMMatrix") || str5.includes("Path2D") || str5.trim().startsWith("Warning") || str5.trim().startsWith("(node:");
+  const trimmed = str5.trim();
+  const isJsonRpc = trimmed.startsWith("{") || trimmed.startsWith("[");
+  if (isJsonRpc) {
+    if (typeof encodingOrCallback === "function") {
+      return originalStdoutWrite(chunk, encodingOrCallback);
+    }
+    return originalStdoutWrite(chunk, encodingOrCallback, callback);
+  }
+  const shouldRedirectToStderr = str5.includes("Warning:") || str5.includes("Cannot polyfill") || str5.includes("DOMMatrix") || str5.includes("Path2D") || trimmed.startsWith("Warning") || trimmed.startsWith("(node:");
   if (shouldRedirectToStderr) {
     if (typeof encodingOrCallback === "function") {
       process.stderr.write(chunk, encodingOrCallback);

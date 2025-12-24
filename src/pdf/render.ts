@@ -1,6 +1,6 @@
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { NodeCanvasFactory } from './canvasFactory.js';
 import { createLogger } from '../utils/logger.js';
+import { NodeCanvasFactory } from './canvasFactory.js';
 
 const logger = createLogger('Renderer');
 

@@ -60,8 +60,27 @@ const findRegexMatches = (
   const regex = new RegExp(query, flags);
   const matches: MatchResult[] = [];
 
-  let match: RegExpExecArray | null = regex.exec(textToSearch);
+  // Limit text length to prevent ReDoS on large documents
+  const MAX_REGEX_TEXT_LENGTH = 1_000_000; // 1MB of text
+  const textForSearch = textToSearch.slice(0, MAX_REGEX_TEXT_LENGTH);
+  const wasTextTruncated = textToSearch.length > MAX_REGEX_TEXT_LENGTH;
+
+  // Set a deadline for regex execution (5 seconds)
+  const REGEX_TIMEOUT_MS = 5000;
+  const deadline = Date.now() + REGEX_TIMEOUT_MS;
+  let iterationCount = 0;
+
+  let match: RegExpExecArray | null = regex.exec(textForSearch);
   while (match !== null && matches.length < remaining) {
+    // Check timeout every 100 iterations to avoid excessive Date.now() calls
+    if (++iterationCount % 100 === 0 && Date.now() > deadline) {
+      logger.warn('Regex search exceeded timeout, stopping early', {
+        matchesFound: matches.length,
+        pattern: query,
+      });
+      break;
+    }
+
     const matchText = match[0];
     const index = match.index;
 
@@ -71,7 +90,11 @@ const findRegexMatches = (
       regex.lastIndex += 1;
     }
 
-    match = regex.exec(textToSearch);
+    match = regex.exec(textForSearch);
+  }
+
+  if (wasTextTruncated && matches.length === 0) {
+    logger.info('Regex search on truncated text (1MB limit)', { pattern: query });
   }
 
   return matches;
@@ -280,7 +303,6 @@ export const pdfSearch = tool()
       '  pdf_search({sources: [{path: "doc.pdf"}], query: "total revenue", context_chars: 100})'
   )
   .input(pdfSearchArgsSchema)
-  /* biome-ignore lint/complexity/noExcessiveCognitiveComplexity: handler coordinates parsing, validation, and batching */
   .handler(async ({ input }) => {
     const {
       sources,
@@ -310,6 +332,21 @@ export const pdfSearch = tool()
       // Prevent ReDoS attacks by limiting regex query length
       if (query.length > 100) {
         return toolError('Regex query too long (max 100 characters)');
+      }
+
+      // Detect common ReDoS patterns (nested quantifiers, overlapping alternations)
+      const dangerousPatterns = [
+        /\([^)]*[+*]\)[+*{]/, // Nested quantifiers like (a+)+ or (a*)*
+        /\([^)]*\|[^)]*\)[+*{]/, // Quantified alternations like (a|ab)+
+        /\(\?:[^)]*[+*]\)[+*{]/, // Non-capturing groups with nested quantifiers
+      ];
+
+      for (const pattern of dangerousPatterns) {
+        if (pattern.test(query)) {
+          return toolError(
+            'Regex pattern contains potentially dangerous nested quantifiers or alternations that could cause catastrophic backtracking. Please simplify your pattern.'
+          );
+        }
       }
 
       try {

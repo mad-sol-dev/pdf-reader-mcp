@@ -18,10 +18,10 @@ const createBaseCache = (pdfPath: string): OcrDiskCache => ({
   images: {},
 });
 
-const scheduleWrite = (fn: () => void): Promise<void> =>
+const scheduleWrite = (fn: () => Promise<void>): Promise<void> =>
   new Promise((resolve) => {
-    setTimeout(() => {
-      fn();
+    setTimeout(async () => {
+      await fn();
       resolve();
     }, 0);
   });

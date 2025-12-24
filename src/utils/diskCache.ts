@@ -6,6 +6,7 @@
  */
 
 import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { OcrDiskCache, OcrImageResult, OcrPageResult } from '../types/cache.js';
 import { createLogger } from './logger.js';
@@ -59,18 +60,18 @@ export const loadOcrCache = (pdfPath: string): OcrDiskCache | null => {
   }
 };
 
-const sleepSync = (ms: number): void => {
-  const array = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(array, 0, 0, ms);
+const sleep = (ms: number): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const acquireCacheLock = (lockPath: string): number => {
+const acquireCacheLock = async (lockPath: string): Promise<fsPromises.FileHandle | null> => {
   const start = Date.now();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
-      return fs.openSync(lockPath, 'wx');
+      const handle = await fsPromises.open(lockPath, 'wx');
+      return handle;
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
 
@@ -79,7 +80,7 @@ const acquireCacheLock = (lockPath: string): number => {
           throw new Error(`Timed out waiting for cache lock at ${lockPath}`);
         }
 
-        sleepSync(LOCK_RETRY_MS);
+        await sleep(LOCK_RETRY_MS);
         continue;
       }
 
@@ -88,23 +89,30 @@ const acquireCacheLock = (lockPath: string): number => {
   }
 };
 
-const releaseCacheLock = (lockPath: string, fd: number): void => {
-  fs.closeSync(fd);
-  fs.rmSync(lockPath, { force: true });
+const releaseCacheLock = async (
+  lockPath: string,
+  handle: fsPromises.FileHandle | null
+): Promise<void> => {
+  if (handle) {
+    await handle.close();
+  }
+  await fsPromises.rm(lockPath, { force: true });
 };
 
-const writeCacheFile = (cachePath: string, cache: OcrDiskCache): void => {
+const writeCacheFile = async (cachePath: string, cache: OcrDiskCache): Promise<void> => {
   cache.updated_at = new Date().toISOString();
 
   // Ensure directory exists
   const dir = path.dirname(cachePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  try {
+    await fsPromises.access(dir);
+  } catch {
+    await fsPromises.mkdir(dir, { recursive: true });
   }
 
   const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tempPath, JSON.stringify(cache, null, 2), 'utf-8');
-  fs.renameSync(tempPath, cachePath);
+  await fsPromises.writeFile(tempPath, JSON.stringify(cache, null, 2), 'utf-8');
+  await fsPromises.rename(tempPath, cachePath);
 };
 
 const mergeCaches = (existing: OcrDiskCache | null, incoming: OcrDiskCache): OcrDiskCache => {
@@ -133,16 +141,16 @@ const mergeCaches = (existing: OcrDiskCache | null, incoming: OcrDiskCache): Ocr
 /**
  * Save OCR cache to disk
  */
-export const saveOcrCache = (pdfPath: string, cache: OcrDiskCache): void => {
+export const saveOcrCache = async (pdfPath: string, cache: OcrDiskCache): Promise<void> => {
   const cachePath = getCacheFilePath(pdfPath);
   const lockPath = `${cachePath}.lock`;
-  const lockFd = acquireCacheLock(lockPath);
+  const lockHandle = await acquireCacheLock(lockPath);
 
   try {
     const latest = loadOcrCache(pdfPath);
     const merged = mergeCaches(latest, cache);
 
-    writeCacheFile(cachePath, merged);
+    await writeCacheFile(cachePath, merged);
 
     logger.debug('Saved OCR cache to disk', {
       cachePath,
@@ -154,7 +162,7 @@ export const saveOcrCache = (pdfPath: string, cache: OcrDiskCache): void => {
     logger.error('Failed to save OCR cache', { cachePath, error: message });
     throw new Error(`Failed to save OCR cache: ${message}`);
   } finally {
-    releaseCacheLock(lockPath, lockFd);
+    await releaseCacheLock(lockPath, lockHandle);
   }
 };
 
@@ -203,14 +211,14 @@ export const getCachedOcrPage = (
 /**
  * Set cached OCR result for a page
  */
-export const setCachedOcrPage = (
+export const setCachedOcrPage = async (
   pdfPath: string,
   fingerprint: string,
   page: number,
   providerHash: string,
   ocrProvider: string,
   result: OcrPageResult
-): void => {
+): Promise<void> => {
   let cache = loadOcrCache(pdfPath);
 
   // Create new cache if doesn't exist
@@ -248,7 +256,7 @@ export const setCachedOcrPage = (
     cached_at: new Date().toISOString(),
   };
 
-  saveOcrCache(pdfPath, cache);
+  await saveOcrCache(pdfPath, cache);
   logger.debug('Cached OCR result for page', { page });
 };
 
@@ -298,7 +306,7 @@ export const getCachedOcrImage = (
 /**
  * Set cached OCR result for an image
  */
-export const setCachedOcrImage = (
+export const setCachedOcrImage = async (
   pdfPath: string,
   fingerprint: string,
   page: number,
@@ -306,7 +314,7 @@ export const setCachedOcrImage = (
   providerHash: string,
   ocrProvider: string,
   result: OcrImageResult
-): void => {
+): Promise<void> => {
   let cache = loadOcrCache(pdfPath);
 
   // Create new cache if doesn't exist
@@ -344,6 +352,6 @@ export const setCachedOcrImage = (
     cached_at: new Date().toISOString(),
   };
 
-  saveOcrCache(pdfPath, cache);
+  await saveOcrCache(pdfPath, cache);
   logger.debug('Cached OCR result for image', { page, imageIndex });
 };

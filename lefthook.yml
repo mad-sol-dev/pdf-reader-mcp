@@ -19,5 +19,5 @@ pre-commit:
 
 pre-push:
   commands:
-    doctor:
-      run: ./node_modules/.bin/doctor check --pre-push
+    test:
+      run: bun run test

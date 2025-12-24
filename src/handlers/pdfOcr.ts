@@ -70,7 +70,6 @@ const countImagesOnPage = async (page: pdfjsLib.PDFPageProxy): Promise<number> =
   return imageCount;
 };
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: OCR decision logic requires multiple conditions
 const decideNeedsOcr = async (
   page: pdfjsLib.PDFPageProxy,
   extractedText: string
@@ -282,7 +281,7 @@ const executePageOcrAndCache = async (
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
   if (sourcePath) {
-    setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? 'unknown', {
+    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? 'unknown', {
       text: ocr.text,
       provider_hash: providerKey,
       cached_at: new Date().toISOString(),
@@ -457,7 +456,7 @@ const performImageOcr = async (
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
   if (source.path) {
-    setCachedOcrImage(
+    await setCachedOcrImage(
       source.path,
       fingerprint,
       page,

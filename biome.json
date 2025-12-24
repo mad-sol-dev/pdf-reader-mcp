@@ -76,8 +76,11 @@
     {
       "includes": [
         "src/handlers/readPdf.ts",
+        "src/handlers/pdfRead.ts",
         "src/handlers/ocrImage.ts",
         "src/handlers/ocrPage.ts",
+        "src/handlers/pdfOcr.ts",
+        "src/handlers/searchPdf.ts",
         "src/utils/ocr.ts",
         "src/pdf/**/*.ts",
         "test/**/*.ts",

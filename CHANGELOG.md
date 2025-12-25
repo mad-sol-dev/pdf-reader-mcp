@@ -71,7 +71,7 @@
 
 ### 🐛 Bug Fixes
 
-- **OCR:** parse boolean extras from strings ([75a2cea](https://github.com/BadlyDrawnBoy/pdf-reader-mcp/commit/75a2cea))
+- **OCR:** parse boolean extras from strings ([75a2cea](https://github.com/mad-sol-dev/pdf-reader-mcp/commit/75a2cea))
   - Added `parseBool()` helper function to handle MCP schema string constraints
   - Supports both boolean and string inputs for `includeFullResponse`, `includeImageBase64`, `extractHeader`, `extractFooter`
   - Fixes validation error "Expected string" when passing boolean values

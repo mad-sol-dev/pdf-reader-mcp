@@ -7,7 +7,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
-[![Local Build](https://img.shields.io/badge/Install-Local%20Build-green)](https://github.com/BadlyDrawnBoy/pdf-reader-mcp)
+[![Local Build](https://img.shields.io/badge/Install-Local%20Build-green)](https://github.com/mad-sol-dev/pdf-reader-mcp)
 
 </div>
 
@@ -47,7 +47,7 @@ Open your terminal/PowerShell and run:
 
 ```bash
 # Clone the repo
-git clone https://github.com/BadlyDrawnBoy/pdf-reader-mcp.git
+git clone https://github.com/mad-sol-dev/pdf-reader-mcp.git
 cd pdf-reader-mcp
 
 # Install & Build
@@ -169,6 +169,6 @@ This project is built on the excellent foundation from **[SylphxAI/pdf-reader-mc
 
 Built with ❤️ using the [Model Context Protocol](https://modelcontextprotocol.io)
 
-**[Report Bug](https://github.com/BadlyDrawnBoy/pdf-reader-mcp/issues)** • **[Request Feature](https://github.com/BadlyDrawnBoy/pdf-reader-mcp/issues)**
+**[Report Bug](https://github.com/mad-sol-dev/pdf-reader-mcp/issues)** • **[Request Feature](https://github.com/mad-sol-dev/pdf-reader-mcp/issues)**
 
 </div>

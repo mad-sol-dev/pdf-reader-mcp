@@ -94,7 +94,15 @@ const releaseCacheLock = async (
   handle: fsPromises.FileHandle | null
 ): Promise<void> => {
   if (handle) {
-    await handle.close();
+    try {
+      await handle.close();
+    } catch (closeError) {
+      logger.warn('Failed to close lock file handle', {
+        lockPath,
+        error: closeError instanceof Error ? closeError.message : String(closeError),
+      });
+      // Continue to remove lock file anyway
+    }
   }
   await fsPromises.rm(lockPath, { force: true });
 };

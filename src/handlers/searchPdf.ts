@@ -1,5 +1,6 @@
 import { text, tool, toolError } from '@sylphx/mcp-server-sdk';
 import type * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import RE2 from 're2';
 import { buildWarnings, extractPageContent } from '../pdf/extractor.js';
 import { loadPdfDocument } from '../pdf/loader.js';
 import { determinePagesToProcess, getTargetPages } from '../pdf/parser.js';
@@ -57,7 +58,6 @@ const findRegexMatches = (
   remaining: number
 ): MatchResult[] => {
   const flags = options.caseSensitive ? 'g' : 'gi';
-  const regex = new RegExp(query, flags);
   const matches: MatchResult[] = [];
 
   // Limit text length to prevent ReDoS on large documents
@@ -65,15 +65,39 @@ const findRegexMatches = (
   const textForSearch = textToSearch.slice(0, MAX_REGEX_TEXT_LENGTH);
   const wasTextTruncated = textToSearch.length > MAX_REGEX_TEXT_LENGTH;
 
-  // Set a deadline for regex execution (5 seconds)
+  // Try to use RE2 for guaranteed linear-time execution
+  let regex: RE2 | RegExp;
+  let usingRE2 = false;
+
+  try {
+    regex = new RE2(query, flags);
+    usingRE2 = true;
+    logger.debug('Using RE2 for safe regex search', { pattern: query });
+  } catch (re2Error) {
+    // RE2 doesn't support all JS regex features; fall back with strict limits
+    logger.warn('RE2 does not support this pattern, falling back to native RegExp', {
+      pattern: query,
+      error: re2Error instanceof Error ? re2Error.message : String(re2Error),
+    });
+
+    if (query.length > 50) {
+      throw new Error(
+        'Complex regex patterns not supported by RE2 are limited to 50 characters for safety'
+      );
+    }
+
+    regex = new RegExp(query, flags);
+  }
+
+  // Set a deadline for regex execution (5 seconds) - backup safety for native RegExp
   const REGEX_TIMEOUT_MS = 5000;
   const deadline = Date.now() + REGEX_TIMEOUT_MS;
   let iterationCount = 0;
 
   let match: RegExpExecArray | null = regex.exec(textForSearch);
   while (match !== null && matches.length < remaining) {
-    // Check timeout every 100 iterations to avoid excessive Date.now() calls
-    if (++iterationCount % 100 === 0 && Date.now() > deadline) {
+    // Check timeout every 100 iterations (mainly for native RegExp fallback)
+    if (!usingRE2 && ++iterationCount % 100 === 0 && Date.now() > deadline) {
       logger.warn('Regex search exceeded timeout, stopping early', {
         matchesFound: matches.length,
         pattern: query,

@@ -78,7 +78,8 @@
     "dotenv": "^17.2.3",
     "glob": "^13.0.0",
     "pdfjs-dist": "4.4.168",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "re2": "^1.23.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",

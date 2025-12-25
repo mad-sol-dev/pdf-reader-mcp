@@ -147,6 +147,50 @@ const mergeCaches = (existing: OcrDiskCache | null, incoming: OcrDiskCache): Ocr
 };
 
 /**
+ * Atomic cache update: read-modify-write inside lock
+ * Prevents race conditions by ensuring all operations happen atomically
+ */
+const atomicCacheUpdate = async (
+  pdfPath: string,
+  fingerprint: string,
+  ocrProvider: string,
+  updateFn: (cache: OcrDiskCache) => void
+): Promise<void> => {
+  const cachePath = getCacheFilePath(pdfPath);
+  const lockPath = `${cachePath}.lock`;
+  const lockHandle = await acquireCacheLock(lockPath);
+
+  try {
+    // Load inside lock
+    let cache = loadOcrCache(pdfPath);
+
+    // Create or reset if fingerprint changed
+    if (!cache || cache.fingerprint !== fingerprint) {
+      if (cache && cache.fingerprint !== fingerprint) {
+        logger.warn('PDF fingerprint changed, resetting cache', { pdfPath });
+      }
+      cache = {
+        fingerprint,
+        pdf_path: pdfPath,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ocr_provider: ocrProvider,
+        pages: {},
+        images: {},
+      };
+    }
+
+    // Apply update
+    updateFn(cache);
+
+    // Write inside lock
+    await writeCacheFile(cachePath, cache);
+  } finally {
+    await releaseCacheLock(lockPath, lockHandle);
+  }
+};
+
+/**
  * Save OCR cache to disk
  */
 export const saveOcrCache = async (pdfPath: string, cache: OcrDiskCache): Promise<void> => {
@@ -227,44 +271,15 @@ export const setCachedOcrPage = async (
   ocrProvider: string,
   result: OcrPageResult
 ): Promise<void> => {
-  let cache = loadOcrCache(pdfPath);
-
-  // Create new cache if doesn't exist
-  if (!cache) {
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {},
+  await atomicCacheUpdate(pdfPath, fingerprint, ocrProvider, (cache) => {
+    const pageKey = String(page);
+    cache.pages[pageKey] = {
+      ...result,
+      provider_hash: providerHash,
+      cached_at: new Date().toISOString(),
     };
-  }
+  });
 
-  // Update fingerprint if changed
-  if (cache.fingerprint !== fingerprint) {
-    logger.warn('PDF fingerprint changed, resetting cache', { pdfPath });
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {},
-    };
-  }
-
-  // Add result
-  const pageKey = String(page);
-  cache.pages[pageKey] = {
-    ...result,
-    provider_hash: providerHash,
-    cached_at: new Date().toISOString(),
-  };
-
-  await saveOcrCache(pdfPath, cache);
   logger.debug('Cached OCR result for page', { page });
 };
 
@@ -323,43 +338,14 @@ export const setCachedOcrImage = async (
   ocrProvider: string,
   result: OcrImageResult
 ): Promise<void> => {
-  let cache = loadOcrCache(pdfPath);
-
-  // Create new cache if doesn't exist
-  if (!cache) {
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {},
+  await atomicCacheUpdate(pdfPath, fingerprint, ocrProvider, (cache) => {
+    const imageKey = `${page}/${imageIndex}`;
+    cache.images[imageKey] = {
+      ...result,
+      provider_hash: providerHash,
+      cached_at: new Date().toISOString(),
     };
-  }
+  });
 
-  // Update fingerprint if changed
-  if (cache.fingerprint !== fingerprint) {
-    logger.warn('PDF fingerprint changed, resetting cache', { pdfPath });
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {},
-    };
-  }
-
-  // Add result
-  const imageKey = `${page}/${imageIndex}`;
-  cache.images[imageKey] = {
-    ...result,
-    provider_hash: providerHash,
-    cached_at: new Date().toISOString(),
-  };
-
-  await saveOcrCache(pdfPath, cache);
   logger.debug('Cached OCR result for image', { page, imageIndex });
 };

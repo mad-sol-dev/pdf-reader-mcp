@@ -26,6 +26,26 @@ const DEFAULT_READ_TIMEOUT_MS = 15_000;
 // Only allow HTTP/HTTPS by default; users can override if needed
 const DEFAULT_ALLOWED_PROTOCOLS = ['https:', 'http:'];
 
+/**
+ * Check if hostname points to private/internal network
+ * Blocks localhost, private IP ranges, link-local, and IPv6 equivalents
+ */
+const isPrivateOrLocalHost = (hostname: string): boolean => {
+  const privatePatterns = [
+    /^localhost$/i,
+    /^127\./,
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^169\.254\./, // Link-local
+    /^::1$/, // IPv6 localhost
+    /^fc00:/i, // IPv6 unique local
+    /^fe80:/i, // IPv6 link-local
+  ];
+
+  return privatePatterns.some((pattern) => pattern.test(hostname));
+};
+
 type LoadPdfOptions = {
   allowedProtocols?: string[];
   maxBytes?: number;
@@ -54,6 +74,14 @@ const fetchPdfBytes = async (
     throw new PdfError(
       ErrorCode.InvalidRequest,
       `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}. Allowed protocols: ${allowedProtocols.join(', ')}`
+    );
+  }
+
+  // Block private/internal network access (SSRF protection)
+  if (isPrivateOrLocalHost(parsedUrl.hostname)) {
+    throw new PdfError(
+      ErrorCode.InvalidRequest,
+      `URL points to private/internal network for ${sourceDescription}. This is not allowed for security reasons.`
     );
   }
 

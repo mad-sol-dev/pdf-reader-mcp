@@ -139,12 +139,11 @@ describe('smart_ocr flag', () => {
       smart_ocr: true,
     });
     const payload = JSON.parse(result.content[0].text) as {
-      data: { provider?: string; decision?: string; message?: string };
+      data: { provider?: string; reason?: string };
     };
 
     expect(payload.data.provider).toBe('smart_ocr_skip');
-    expect(payload.data.decision).toBe('text_too_long');
-    expect(payload.data.message).toContain('Smart OCR determined');
+    expect(payload.data.reason).toBe('text_too_long');
     expect(mockPerformOcr).not.toHaveBeenCalled();
   });
 

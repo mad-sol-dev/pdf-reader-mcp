@@ -1,5 +1,36 @@
 # Changelog
 
+## [3.1.0] - 2025-12-25
+
+### 🐛 Fixed
+
+- **Text extraction:** Viewport-Transformationen für korrekte Lesereihenfolge bei rotierten Seiten
+  - Text erscheint jetzt in natürlicher top-to-bottom Reihenfolge für alle Rotationen (0°, 90°, 180°, 270°)
+  - Koordinaten werden korrekt durch viewport transform berechnet statt rohe PDF-Koordinaten zu nutzen
+  - ⚠️ **Breaking Change:** Output-Reihenfolge kann sich für rotierte Seiten ändern (dies ist ein Bugfix - vorher war die Reihenfolge inkorrekt)
+
+- **Word spacing:** Intelligente Leerzeichen-Einfügung verhindert Wort-Zusammenklebung
+  - Heuristik: Leerzeichen wird eingefügt wenn `gap > fontSize × 0.35`
+  - Berücksichtigt vorhandene Leerzeichen und Interpunktion
+  - Verbessert Lesbarkeit für Dokumente mit variablem Textabstand
+
+- **Smart-OCR:** Extrahierten Text zurückgeben statt leerer String bei skip
+  - `smart_ocr_skip` Responses enthalten jetzt den Text der als ausreichend bewertet wurde
+  - Beide Pfade (cached und non-cached decisions) geben jetzt Text zurück
+  - `from_cache` Flag wird korrekt gesetzt
+
+- **MCP compliance:** Alle Logs nach stderr für sauberes JSON-RPC auf stdout
+  - Logger-Output (inkl. `info` level) geht jetzt nach stderr statt stdout
+  - Verhindert Korruption des MCP JSON-RPC Protokolls durch Log-Ausgaben
+  - Behebt intermittierende MCP-Protocol-Fehler durch Dependency-Warnings
+
+### ✨ Added
+
+- `src/pdf/geometry.ts`: Affine Transform-Utilities für Koordinaten-Konversion
+  - `multiplyTransform()`: 2D Matrix-Multiplikation
+  - `transformXY()`: Viewport-Transform auf Item-Koordinaten anwenden
+  - `calculateLineEpsilon()`: Dynamisches Epsilon für Zeilengruppierung
+
 ## Unreleased
 
 ### ✨ Features

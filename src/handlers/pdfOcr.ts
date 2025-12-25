@@ -232,12 +232,17 @@ const handleSmartOcrDecision = async (
 
   const cached = getCachedDecision(fingerprint, page);
   let decision = cached;
+  let pageText = '';
 
   if (!decision) {
     const pdfPage = await pdfDocument.getPage(page);
-    const pageText = await extractTextFromPage(pdfPage);
+    pageText = await extractTextFromPage(pdfPage);
     decision = await decideNeedsOcr(pdfPage, pageText);
     setCachedDecision(fingerprint, page, decision);
+  } else {
+    // Decision was cached, extract text now
+    const pdfPage = await pdfDocument.getPage(page);
+    pageText = await extractTextFromPage(pdfPage);
   }
 
   if (!decision.needsOcr) {
@@ -247,13 +252,12 @@ const handleSmartOcrDecision = async (
         source,
         success: true,
         data: {
-          text: '',
+          text: pageText,
           provider: 'smart_ocr_skip',
           fingerprint,
-          from_cache: false,
+          from_cache: cached !== undefined,
           page,
-          decision: decision.reason,
-          message: 'Smart OCR determined that text extraction is sufficient.',
+          reason: decision.reason,
         },
       },
     };

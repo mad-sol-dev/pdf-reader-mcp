@@ -12,6 +12,7 @@ import type {
   PdfResultData,
 } from '../types/pdf.js';
 import { createLogger } from '../utils/logger.js';
+import { calculateLineEpsilon, transformXY } from './geometry.js';
 
 const logger = createLogger('Extractor');
 
@@ -400,52 +401,142 @@ export const extractPageContent = async (
   try {
     const page = await pdfDocument.getPage(pageNum);
 
+    // Get viewport transformation to handle page rotation and coordinate conversion
+    const viewport = page.getViewport({ scale: 1.0 });
+    const viewportTransform = viewport.transform as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+
     // Extract text content with X/Y-coordinates
     const textContent = await page.getTextContent();
 
-    // Group text items by Y-coordinate (items on same line have similar Y values)
-    // Also track X-coordinates for table detection
-    const textByY = new Map<number, Array<{ x: number; text: string; fontSize?: number }>>();
+    // Collect text items with viewport-transformed coordinates
+    interface TextItem {
+      x: number;
+      y: number;
+      text: string;
+      fontSize?: number;
+      width?: number;
+    }
+
+    const textItems: TextItem[] = [];
 
     for (const item of textContent.items) {
-      const textItem = item as { str: string; transform: number[]; height?: number };
-      // transform[4] is the X coordinate, transform[5] is the Y coordinate
-      const xCoord = textItem.transform[4];
-      const yCoord = textItem.transform[5];
-      if (yCoord === undefined || xCoord === undefined) continue;
-      const y = Math.round(yCoord);
-      const x = Math.round(xCoord);
+      const textItem = item as {
+        str: string;
+        transform: number[];
+        height?: number;
+        width?: number;
+      };
+      const itemTransform = textItem.transform as [number, number, number, number, number, number];
+
+      // Apply viewport transformation to get screen coordinates
+      const { x: xCoord, y: yCoord } = transformXY(viewportTransform, itemTransform);
+
       const fontSize =
         typeof textItem.height === 'number' && Number.isFinite(textItem.height)
           ? Math.abs(textItem.height)
           : undefined;
 
-      if (!textByY.has(y)) {
-        textByY.set(y, []);
-      }
-      textByY.get(y)?.push({ x, text: textItem.str, fontSize });
+      const textWidth =
+        typeof textItem.width === 'number' && Number.isFinite(textItem.width)
+          ? textItem.width
+          : undefined;
+
+      textItems.push({
+        x: xCoord,
+        y: yCoord,
+        text: textItem.str,
+        ...(fontSize !== undefined && { fontSize }),
+        ...(textWidth !== undefined && { width: textWidth }),
+      });
     }
 
-    // Convert grouped text to content items
-    for (const [y, textParts] of textByY.entries()) {
-      // Sort by X position to maintain left-to-right order
-      textParts.sort((a, b) => a.x - b.x);
-      const textContent = textParts.map((part) => part.text).join('');
-      const fontSizes = textParts
-        .map((part) => part.fontSize)
-        .filter((value): value is number => typeof value === 'number' && value > 0);
-      const averageFontSize =
-        fontSizes.length > 0
-          ? fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length
-          : undefined;
-      const xPosition = textParts[0]?.x ?? 0; // Use leftmost X position
+    // Group text items by Y-coordinate with epsilon tolerance
+    const lineGroups: Array<{ y: number; items: TextItem[] }> = [];
+
+    for (const item of textItems) {
+      const epsilon = calculateLineEpsilon(item.fontSize);
+
+      // Find existing line within epsilon distance
+      const existingLine = lineGroups.find((group) => Math.abs(group.y - item.y) <= epsilon);
+
+      if (existingLine) {
+        existingLine.items.push(item);
+      } else {
+        lineGroups.push({ y: item.y, items: [item] });
+      }
+    }
+
+    // Sort lines by Y-coordinate (ascending = top to bottom in viewport coordinates)
+    lineGroups.sort((a, b) => a.y - b.y);
+
+    // Helper function to assemble line text with intelligent spacing
+    const assembleLineText = (items: TextItem[]): string => {
+      if (items.length === 0) return '';
+
+      const firstItem = items[0];
+      if (!firstItem) return '';
+      if (items.length === 1) return firstItem.text;
+
+      // Sort items by X-coordinate (left to right)
+      items.sort((a, b) => a.x - b.x);
+
+      let result = firstItem.text;
+      let prevEnd =
+        firstItem.x + (firstItem.width ?? firstItem.text.length * (firstItem.fontSize ?? 10) * 0.5);
+
+      for (let i = 1; i < items.length; i++) {
+        const curr = items[i];
+        if (!curr) continue;
+
+        const gap = curr.x - prevEnd;
+        const threshold = curr.fontSize ? curr.fontSize * 0.35 : 3.0;
+
+        // Add space if gap is significant and no whitespace already present
+        const needsSpace =
+          gap > threshold &&
+          !result.endsWith(' ') &&
+          !/[,;:.!?\-)]$/.test(result) &&
+          !/^[\s,;:.!?\-()]/.test(curr.text);
+
+        if (needsSpace) {
+          result += ' ';
+        }
+
+        result += curr.text;
+        prevEnd = curr.x + (curr.width ?? curr.text.length * (curr.fontSize ?? 10) * 0.5);
+      }
+
+      return result;
+    };
+
+    // Convert line groups to content items
+    for (const group of lineGroups) {
+      const textContent = assembleLineText(group.items);
 
       if (textContent.trim()) {
+        const fontSizes = group.items
+          .map((item) => item.fontSize)
+          .filter((fs): fs is number => typeof fs === 'number' && fs > 0);
+
+        const averageFontSize =
+          fontSizes.length > 0
+            ? fontSizes.reduce((sum, fs) => sum + fs, 0) / fontSizes.length
+            : undefined;
+
+        const xPosition = group.items[0]?.x ?? 0;
+
         contentItems.push({
           type: 'text',
-          yPosition: y,
+          yPosition: group.y,
           xPosition,
-          fontSize: averageFontSize,
+          ...(averageFontSize !== undefined && { fontSize: averageFontSize }),
           textContent,
         });
       }
@@ -473,14 +564,12 @@ export const extractPageContent = async (
 
         const imageName = argsArray[0] as string;
 
-        // Get transform matrix from the args (if available)
+        // Get transform matrix from the args and apply viewport transformation
         let yPosition = 0;
         if (argsArray.length > 1 && Array.isArray(argsArray[1])) {
-          const transform = argsArray[1] as number[];
-          const yCoord = transform[5];
-          if (yCoord !== undefined) {
-            yPosition = Math.round(yCoord);
-          }
+          const imageTransform = argsArray[1] as [number, number, number, number, number, number];
+          const { y } = transformXY(viewportTransform, imageTransform);
+          yPosition = y;
         }
 
         // Use shared helper to retrieve and process image data
@@ -526,6 +615,6 @@ export const extractPageContent = async (
     };
   }
 
-  // Sort by Y-position (descending = top to bottom in PDF coordinates)
-  return { items: contentItems.sort((a, b) => b.yPosition - a.yPosition), warnings };
+  // Sort by Y-position (ascending = top to bottom in viewport coordinates)
+  return { items: contentItems.sort((a, b) => a.yPosition - b.yPosition), warnings };
 };

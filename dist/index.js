@@ -221,7 +221,7 @@ class Logger {
       case "debug":
         return console.debug;
       case "info":
-        return console.info;
+        return console.error;
       case "warn":
         return console.warn;
       default:
@@ -233,6 +233,29 @@ var createLogger = (component, minLevel) => {
   return new Logger(component, minLevel);
 };
 var logger = new Logger("", 2 /* WARN */);
+
+// src/pdf/geometry.ts
+var multiplyTransform = (m1, m2) => {
+  const [a1, b1, c1, d1, e1, f1] = m1;
+  const [a2, b2, c2, d2, e2, f2] = m2;
+  return [
+    a1 * a2 + c1 * b2,
+    b1 * a2 + d1 * b2,
+    a1 * c2 + c1 * d2,
+    b1 * c2 + d1 * d2,
+    a1 * e2 + c1 * f2 + e1,
+    b1 * e2 + d1 * f2 + f1
+  ];
+};
+var transformXY = (viewportTransform, itemTransform) => {
+  const combined = multiplyTransform(viewportTransform, itemTransform);
+  return { x: combined[4], y: combined[5] };
+};
+var calculateLineEpsilon = (fontSize) => {
+  const DEFAULT_EPSILON = 2.5;
+  const EPSILON_RATIO = 0.2;
+  return fontSize && fontSize > 0 ? fontSize * EPSILON_RATIO : DEFAULT_EPSILON;
+};
 
 // src/pdf/extractor.ts
 var logger2 = createLogger("Extractor");
@@ -446,34 +469,72 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
   const warnings = [];
   try {
     const page = await pdfDocument.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1 });
+    const viewportTransform = viewport.transform;
     const textContent = await page.getTextContent();
-    const textByY = new Map;
+    const textItems = [];
     for (const item of textContent.items) {
       const textItem = item;
-      const xCoord = textItem.transform[4];
-      const yCoord = textItem.transform[5];
-      if (yCoord === undefined || xCoord === undefined)
-        continue;
-      const y = Math.round(yCoord);
-      const x = Math.round(xCoord);
+      const itemTransform = textItem.transform;
+      const { x: xCoord, y: yCoord } = transformXY(viewportTransform, itemTransform);
       const fontSize = typeof textItem.height === "number" && Number.isFinite(textItem.height) ? Math.abs(textItem.height) : undefined;
-      if (!textByY.has(y)) {
-        textByY.set(y, []);
-      }
-      textByY.get(y)?.push({ x, text: textItem.str, fontSize });
+      const textWidth = typeof textItem.width === "number" && Number.isFinite(textItem.width) ? textItem.width : undefined;
+      textItems.push({
+        x: xCoord,
+        y: yCoord,
+        text: textItem.str,
+        ...fontSize !== undefined && { fontSize },
+        ...textWidth !== undefined && { width: textWidth }
+      });
     }
-    for (const [y, textParts] of textByY.entries()) {
-      textParts.sort((a, b) => a.x - b.x);
-      const textContent2 = textParts.map((part) => part.text).join("");
-      const fontSizes = textParts.map((part) => part.fontSize).filter((value) => typeof value === "number" && value > 0);
-      const averageFontSize = fontSizes.length > 0 ? fontSizes.reduce((sum, value) => sum + value, 0) / fontSizes.length : undefined;
-      const xPosition = textParts[0]?.x ?? 0;
+    const lineGroups = [];
+    for (const item of textItems) {
+      const epsilon = calculateLineEpsilon(item.fontSize);
+      const existingLine = lineGroups.find((group) => Math.abs(group.y - item.y) <= epsilon);
+      if (existingLine) {
+        existingLine.items.push(item);
+      } else {
+        lineGroups.push({ y: item.y, items: [item] });
+      }
+    }
+    lineGroups.sort((a, b) => a.y - b.y);
+    const assembleLineText = (items) => {
+      if (items.length === 0)
+        return "";
+      const firstItem = items[0];
+      if (!firstItem)
+        return "";
+      if (items.length === 1)
+        return firstItem.text;
+      items.sort((a, b) => a.x - b.x);
+      let result = firstItem.text;
+      let prevEnd = firstItem.x + (firstItem.width ?? firstItem.text.length * (firstItem.fontSize ?? 10) * 0.5);
+      for (let i = 1;i < items.length; i++) {
+        const curr = items[i];
+        if (!curr)
+          continue;
+        const gap = curr.x - prevEnd;
+        const threshold = curr.fontSize ? curr.fontSize * 0.35 : 3;
+        const needsSpace = gap > threshold && !result.endsWith(" ") && !/[,;:.!?\-)]$/.test(result) && !/^[\s,;:.!?\-()]/.test(curr.text);
+        if (needsSpace) {
+          result += " ";
+        }
+        result += curr.text;
+        prevEnd = curr.x + (curr.width ?? curr.text.length * (curr.fontSize ?? 10) * 0.5);
+      }
+      return result;
+    };
+    for (const group of lineGroups) {
+      const textContent2 = assembleLineText(group.items);
       if (textContent2.trim()) {
+        const fontSizes = group.items.map((item) => item.fontSize).filter((fs) => typeof fs === "number" && fs > 0);
+        const averageFontSize = fontSizes.length > 0 ? fontSizes.reduce((sum, fs) => sum + fs, 0) / fontSizes.length : undefined;
+        const xPosition = group.items[0]?.x ?? 0;
         contentItems.push({
           type: "text",
-          yPosition: y,
+          yPosition: group.y,
           xPosition,
-          fontSize: averageFontSize,
+          ...averageFontSize !== undefined && { fontSize: averageFontSize },
           textContent: textContent2
         });
       }
@@ -495,11 +556,9 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
         const imageName = argsArray[0];
         let yPosition = 0;
         if (argsArray.length > 1 && Array.isArray(argsArray[1])) {
-          const transform = argsArray[1];
-          const yCoord = transform[5];
-          if (yCoord !== undefined) {
-            yPosition = Math.round(yCoord);
-          }
+          const imageTransform = argsArray[1];
+          const { y } = transformXY(viewportTransform, imageTransform);
+          yPosition = y;
         }
         const imageResult = await retrieveImageData(page, imageName, pageNum);
         if (imageResult.warning) {
@@ -538,7 +597,7 @@ var extractPageContent = async (pdfDocument, pageNum, includeImages, sourceDescr
       warnings
     };
   }
-  return { items: contentItems.sort((a, b) => b.yPosition - a.yPosition), warnings };
+  return { items: contentItems.sort((a, b) => a.yPosition - b.yPosition), warnings };
 };
 
 // src/utils/errors.ts
@@ -1906,11 +1965,15 @@ var handleSmartOcrDecision = async (smartOcr, fingerprint, page, source, pdfDocu
     return;
   const cached = getCachedDecision(fingerprint, page);
   let decision = cached;
+  let pageText = "";
   if (!decision) {
     const pdfPage = await pdfDocument.getPage(page);
-    const pageText = await extractTextFromPage(pdfPage);
+    pageText = await extractTextFromPage(pdfPage);
     decision = await decideNeedsOcr(pdfPage, pageText);
     setCachedDecision(fingerprint, page, decision);
+  } else {
+    const pdfPage = await pdfDocument.getPage(page);
+    pageText = await extractTextFromPage(pdfPage);
   }
   if (!decision.needsOcr) {
     return {
@@ -1919,13 +1982,12 @@ var handleSmartOcrDecision = async (smartOcr, fingerprint, page, source, pdfDocu
         source,
         success: true,
         data: {
-          text: "",
+          text: pageText,
           provider: "smart_ocr_skip",
           fingerprint,
-          from_cache: false,
+          from_cache: cached !== undefined,
           page,
-          decision: decision.reason,
-          message: "Smart OCR determined that text extraction is sufficient."
+          reason: decision.reason
         }
       }
     };
@@ -2514,37 +2576,306 @@ var pdfRead = tool5().description(`STAGE 1: Extract text from PDF pages
   return [text5(JSON.stringify({ results }, null, 2))];
 });
 
+// src/handlers/pdfVision.ts
+import { image as image3, text as text6, tool as tool6, toolError as toolError6 } from "@sylphx/mcp-server-sdk";
+
+// src/schemas/pdfVision.ts
+import { bool as bool3, description as description7, gte as gte5, int as int5, num as num5, object as object7, optional as optional6 } from "@sylphx/vex";
+var pdfVisionArgsSchema = object7({
+  source: pdfSourceSchema,
+  page: num5(int5, gte5(1), description7("1-based page number.")),
+  index: optional6(num5(int5, gte5(0), description7("0-based image index within the page. If provided, Vision will analyze the specific image. If omitted, Vision will analyze the entire rendered page."))),
+  cache: optional6(bool3(description7("Use cached Vision result when available. Defaults to true.")))
+});
+
+// src/handlers/pdfVision.ts
+var logger12 = createLogger("PdfVision");
+var DEFAULT_VISION_SCALE = 1.5;
+var getConfiguredVisionProvider = () => {
+  const mistralKey = process.env.MISTRAL_API_KEY;
+  if (mistralKey) {
+    return {
+      type: "mistral",
+      api_key: mistralKey,
+      name: "mistral-vision-default"
+    };
+  }
+  return;
+};
+var checkInMemoryCache2 = (fingerprint, cacheKey, useCache, source, page, index) => {
+  if (!useCache)
+    return;
+  const cached = getCachedOcrText(fingerprint, cacheKey);
+  if (!cached)
+    return;
+  return {
+    success: true,
+    result: {
+      source,
+      success: true,
+      data: {
+        text: cached.text,
+        provider: cached.provider ?? "cache",
+        fingerprint,
+        from_cache: true,
+        ...index !== undefined ? { image: { page, index } } : { page }
+      }
+    }
+  };
+};
+var checkDiskCacheForPage2 = (sourcePath, fingerprint, page, providerKey, providerName, cacheKey, source, useCache) => {
+  if (!useCache || !sourcePath)
+    return;
+  const diskCached = getCachedOcrPage(sourcePath, fingerprint, page, providerKey);
+  if (!diskCached)
+    return;
+  setCachedOcrText(fingerprint, cacheKey, {
+    text: diskCached.text,
+    provider: providerName
+  });
+  logger12.debug("Loaded Vision result from disk cache", { page, path: sourcePath });
+  return {
+    success: true,
+    result: {
+      source,
+      success: true,
+      data: {
+        text: diskCached.text,
+        provider: providerName,
+        fingerprint,
+        from_cache: true,
+        page
+      }
+    }
+  };
+};
+var checkDiskCacheForImage2 = (sourcePath, fingerprint, page, index, providerKey, providerName, cacheKey, source, useCache) => {
+  if (!useCache || !sourcePath)
+    return;
+  const diskCached = getCachedOcrImage(sourcePath, fingerprint, page, index, providerKey);
+  if (!diskCached)
+    return;
+  setCachedOcrText(fingerprint, cacheKey, {
+    text: diskCached.text,
+    provider: providerName
+  });
+  logger12.debug("Loaded Vision result from disk cache", { page, index, path: sourcePath });
+  return {
+    success: true,
+    result: {
+      source,
+      success: true,
+      data: {
+        text: diskCached.text,
+        provider: providerName,
+        fingerprint,
+        from_cache: true,
+        image: { page, index }
+      }
+    }
+  };
+};
+var executePageVisionAndCache = async (pdfDocument, page, provider, fingerprint, cacheKey, providerKey, sourcePath, source) => {
+  const { data: imageData } = await renderPageToPng(pdfDocument, page, DEFAULT_VISION_SCALE);
+  const visionResult = await performOcr(imageData, provider);
+  setCachedOcrText(fingerprint, cacheKey, {
+    text: visionResult.text,
+    provider: visionResult.provider
+  });
+  if (sourcePath) {
+    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
+      text: visionResult.text,
+      provider_hash: providerKey,
+      cached_at: new Date().toISOString()
+    });
+    logger12.debug("Saved Vision result to disk cache", { page, path: sourcePath });
+  }
+  return {
+    success: true,
+    result: {
+      source,
+      success: true,
+      data: {
+        ...visionResult,
+        fingerprint,
+        from_cache: false,
+        page
+      }
+    }
+  };
+};
+var performPageVision = async (source, sourceDescription, page, provider, useCache, pdfDocument) => {
+  const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
+  const providerKey = buildOcrProviderKey(provider);
+  const cacheKey = `page-${page}#vision#provider-${providerKey}`;
+  if (!provider) {
+    logger12.info("No Vision provider configured, returning rendered page image", { page });
+    const { data: imageData } = await renderPageToPng(pdfDocument, page, DEFAULT_VISION_SCALE);
+    return {
+      success: false,
+      imageData,
+      metadata: {
+        page,
+        scale: DEFAULT_VISION_SCALE,
+        message: "No Vision provider configured. Returning rendered page image for analysis.",
+        recommendation: "Configure MISTRAL_API_KEY environment variable to enable Mistral Vision API, or analyze this image with Claude Vision."
+      }
+    };
+  }
+  const memoryCached = checkInMemoryCache2(fingerprint, cacheKey, useCache, sourceDescription, page);
+  if (memoryCached)
+    return memoryCached;
+  const diskCached = checkDiskCacheForPage2(source.path, fingerprint, page, providerKey, provider.name ?? "unknown", cacheKey, sourceDescription, useCache);
+  if (diskCached)
+    return diskCached;
+  return executePageVisionAndCache(pdfDocument, page, provider, fingerprint, cacheKey, providerKey, source.path, sourceDescription);
+};
+var performImageVision = async (source, sourceDescription, page, index, provider, useCache, pdfDocument) => {
+  const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
+  const providerKey = buildOcrProviderKey(provider);
+  const cacheKey = `image-${page}-${index}#vision#provider-${providerKey}`;
+  const { images } = await extractImages(pdfDocument, [page]);
+  const target = images.find((img) => img.page === page && img.index === index);
+  if (!target) {
+    throw new Error(`Image with index ${index} not found on page ${page}.`);
+  }
+  if (!provider) {
+    logger12.info("No Vision provider configured, returning extracted image", { page, index });
+    return {
+      success: false,
+      imageData: target.data,
+      metadata: {
+        page,
+        index,
+        width: target.width,
+        height: target.height,
+        format: target.format,
+        message: "No Vision provider configured. Returning extracted image for analysis.",
+        recommendation: "Configure MISTRAL_API_KEY environment variable to enable Mistral Vision API, or analyze this image with Claude Vision."
+      }
+    };
+  }
+  const memoryCached = checkInMemoryCache2(fingerprint, cacheKey, useCache, sourceDescription, page, index);
+  if (memoryCached)
+    return memoryCached;
+  const diskCached = checkDiskCacheForImage2(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", cacheKey, sourceDescription, useCache);
+  if (diskCached)
+    return diskCached;
+  const visionResult = await performOcr(target.data, provider);
+  setCachedOcrText(fingerprint, cacheKey, {
+    text: visionResult.text,
+    provider: visionResult.provider
+  });
+  if (source.path) {
+    await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
+      text: visionResult.text,
+      provider_hash: providerKey,
+      cached_at: new Date().toISOString()
+    });
+    logger12.debug("Saved Vision result to disk cache", { page, index, path: source.path });
+  }
+  return {
+    success: true,
+    result: {
+      source: sourceDescription,
+      success: true,
+      data: {
+        ...visionResult,
+        fingerprint,
+        from_cache: false,
+        image: { page, index }
+      }
+    }
+  };
+};
+var pdfVision = tool6().description(`Analyze diagrams, charts, and technical illustrations using Mistral Vision API
+
+` + `Use this for:
+` + `- Technical diagrams (timing diagrams, circuit diagrams, flowcharts)
+` + `- Charts and graphs
+` + `- Illustrations and visual content
+
+` + `AUTO-FALLBACK: If no MISTRAL_API_KEY is configured, returns base64 image for Claude Vision analysis.
+
+` + `Two modes:
+` + `1. Page Vision: Omit "index" to analyze entire rendered page
+` + `2. Image Vision: Provide "index" to analyze specific image from page
+
+` + `Configuration: Set MISTRAL_API_KEY environment variable to enable Mistral Vision.
+
+` + `Example:
+` + `  pdf_vision({source: {path: "doc.pdf"}, page: 5})  // Full page
+` + '  pdf_vision({source: {path: "doc.pdf"}, page: 5, index: 0})  // Specific image').input(pdfVisionArgsSchema).handler(async ({ input }) => {
+  const { source, page, index, cache } = input;
+  const sourceDescription = source.path ?? source.url ?? "unknown source";
+  const sourceArgs = {
+    ...source.path ? { path: source.path } : {},
+    ...source.url ? { url: source.url } : {}
+  };
+  try {
+    const configuredProvider = getConfiguredVisionProvider();
+    const result = await withPdfDocument(sourceArgs, sourceDescription, async (pdfDocument) => {
+      const totalPages = pdfDocument.numPages;
+      if (page < 1 || page > totalPages) {
+        throw new Error(`Requested page ${page} is out of bounds (1-${totalPages}).`);
+      }
+      if (index !== undefined) {
+        return performImageVision(sourceArgs, sourceDescription, page, index, configuredProvider, cache !== false, pdfDocument);
+      }
+      return performPageVision(sourceArgs, sourceDescription, page, configuredProvider, cache !== false, pdfDocument);
+    });
+    if (!result.success) {
+      const nextStep2 = buildNextStep2({ stage: "vision" });
+      return [
+        text6(JSON.stringify({ ...result.metadata, next_step: nextStep2 }, null, 2)),
+        image3(result.imageData, "image/png")
+      ];
+    }
+    const nextStep = buildNextStep2({ stage: "vision" });
+    return [text6(JSON.stringify({ ...result.result, next_step: nextStep }, null, 2))];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger12.error("Failed to perform Vision analysis", {
+      sourceDescription,
+      page,
+      index,
+      error: message
+    });
+    return toolError6(`Failed to perform Vision analysis on ${sourceDescription}. Reason: ${message}`);
+  }
+});
+
 // src/handlers/searchPdf.ts
-import { text as text6, tool as tool6, toolError as toolError6 } from "@sylphx/mcp-server-sdk";
+import { text as text7, tool as tool7, toolError as toolError7 } from "@sylphx/mcp-server-sdk";
 
 // src/schemas/pdfSearch.ts
 import {
   array as array4,
-  bool as bool3,
-  description as description7,
-  gte as gte5,
-  int as int5,
+  bool as bool4,
+  description as description8,
+  gte as gte6,
+  int as int6,
   min as min2,
-  num as num5,
-  object as object7,
-  optional as optional6,
+  num as num6,
+  object as object8,
+  optional as optional7,
   str as str4
 } from "@sylphx/vex";
-var pdfSearchArgsSchema = object7({
+var pdfSearchArgsSchema = object8({
   sources: array4(pdfSourceSchema),
-  query: str4(min2(1), description7("Plain text or regular expression to search for within pages.")),
-  use_regex: optional6(bool3(description7("Treat the query as a regular expression."))),
-  case_sensitive: optional6(bool3(description7("Enable case sensitive matching."))),
-  context_chars: optional6(num5(int5, gte5(0), description7("Number of characters to include before/after each match."))),
-  max_hits: optional6(num5(int5, gte5(1), description7("Maximum number of matches to return across all pages."))),
-  max_chars_per_page: optional6(num5(int5, gte5(1), description7("Truncate each page before searching to control payload size."))),
-  preserve_whitespace: optional6(bool3(description7("Preserve original whitespace when building text."))),
-  trim_lines: optional6(bool3(description7("Trim leading/trailing whitespace for each text line."))),
-  allow_full_document: optional6(bool3(description7("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
+  query: str4(min2(1), description8("Plain text or regular expression to search for within pages.")),
+  use_regex: optional7(bool4(description8("Treat the query as a regular expression."))),
+  case_sensitive: optional7(bool4(description8("Enable case sensitive matching."))),
+  context_chars: optional7(num6(int6, gte6(0), description8("Number of characters to include before/after each match."))),
+  max_hits: optional7(num6(int6, gte6(1), description8("Maximum number of matches to return across all pages."))),
+  max_chars_per_page: optional7(num6(int6, gte6(1), description8("Truncate each page before searching to control payload size."))),
+  preserve_whitespace: optional7(bool4(description8("Preserve original whitespace when building text."))),
+  trim_lines: optional7(bool4(description8("Trim leading/trailing whitespace for each text line."))),
+  allow_full_document: optional7(bool4(description8("When true, allows searching the entire document if no pages are specified. When false, only a small sample of pages will be processed.")))
 });
 
 // src/handlers/searchPdf.ts
-var logger12 = createLogger("PdfSearch");
+var logger13 = createLogger("PdfSearch");
 var findPlainMatches = (textToSearch, query, options, remaining) => {
   const matches = [];
   const haystack = options.caseSensitive ? textToSearch : textToSearch.toLowerCase();
@@ -2572,7 +2903,7 @@ var findRegexMatches = (textToSearch, query, options, remaining) => {
   let match = regex.exec(textForSearch);
   while (match !== null && matches.length < remaining) {
     if (++iterationCount % 100 === 0 && Date.now() > deadline) {
-      logger12.warn("Regex search exceeded timeout, stopping early", {
+      logger13.warn("Regex search exceeded timeout, stopping early", {
         matchesFound: matches.length,
         pattern: query
       });
@@ -2587,7 +2918,7 @@ var findRegexMatches = (textToSearch, query, options, remaining) => {
     match = regex.exec(textForSearch);
   }
   if (wasTextTruncated && matches.length === 0) {
-    logger12.info("Regex search on truncated text (1MB limit)", { pattern: query });
+    logger13.info("Regex search on truncated text (1MB limit)", { pattern: query });
   }
   return matches;
 };
@@ -2606,7 +2937,7 @@ var getPageLabelsSafe2 = async (pdfDocument, sourceDescription) => {
     return await pdfDocument.getPageLabels();
   } catch (labelError) {
     const message = labelError instanceof Error ? labelError.message : String(labelError);
-    logger12.warn("Error retrieving page labels", { sourceDescription, error: message });
+    logger13.warn("Error retrieving page labels", { sourceDescription, error: message });
   }
   return null;
 };
@@ -2659,7 +2990,7 @@ var destroyPdfDocument2 = async (pdfDocument, sourceDescription) => {
     await pdfDocument.destroy();
   } catch (destroyError) {
     const message = destroyError instanceof Error ? destroyError.message : String(destroyError);
-    logger12.warn("Error destroying PDF document", { sourceDescription, error: message });
+    logger13.warn("Error destroying PDF document", { sourceDescription, error: message });
   }
 };
 var processSearchSource = async (source, sourceDescription, options, allowFullDocument) => {
@@ -2705,7 +3036,7 @@ var processSearchSource = async (source, sourceDescription, options, allowFullDo
   }
   return result;
 };
-var pdfSearch = tool6().description(`Search for specific text patterns across PDF pages
+var pdfSearch = tool7().description(`Search for specific text patterns across PDF pages
 
 ` + `Use when you need to:
 ` + `- Find specific keywords, phrases, or patterns across documents
@@ -2742,7 +3073,7 @@ var pdfSearch = tool6().description(`Search for specific text patterns across PD
   };
   if (baseOptions.useRegex) {
     if (query.length > 100) {
-      return toolError6("Regex query too long (max 100 characters)");
+      return toolError7("Regex query too long (max 100 characters)");
     }
     const dangerousPatterns = [
       /\([^)]*[+*]\)[+*{]/,
@@ -2751,14 +3082,14 @@ var pdfSearch = tool6().description(`Search for specific text patterns across PD
     ];
     for (const pattern of dangerousPatterns) {
       if (pattern.test(query)) {
-        return toolError6("Regex pattern contains potentially dangerous nested quantifiers or alternations that could cause catastrophic backtracking. Please simplify your pattern.");
+        return toolError7("Regex pattern contains potentially dangerous nested quantifiers or alternations that could cause catastrophic backtracking. Please simplify your pattern.");
       }
     }
     try {
       new RegExp(query);
     } catch (regexError) {
       const message = regexError instanceof Error ? regexError.message : String(regexError);
-      return toolError6(`Invalid regular expression: ${message}`);
+      return toolError7(`Invalid regular expression: ${message}`);
     }
   }
   const MAX_CONCURRENT_SOURCES = 3;
@@ -2782,279 +3113,10 @@ var pdfSearch = tool6().description(`Search for specific text patterns across PD
   }
   if (results.every((r) => !r.success)) {
     const errors = results.map((r) => r.error).join("; ");
-    return toolError6(`All sources failed to search: ${errors}`);
+    return toolError7(`All sources failed to search: ${errors}`);
   }
   const nextStep = buildNextStep2({ stage: "search" });
-  return [text6(JSON.stringify({ results, next_step: nextStep }, null, 2))];
-});
-
-// src/handlers/pdfVision.ts
-import { image as image3, text as text7, tool as tool7, toolError as toolError7 } from "@sylphx/mcp-server-sdk";
-
-// src/schemas/pdfVision.ts
-import { bool as bool4, description as description8, gte as gte6, int as int6, num as num6, object as object8, optional as optional7 } from "@sylphx/vex";
-var pdfVisionArgsSchema = object8({
-  source: pdfSourceSchema,
-  page: num6(int6, gte6(1), description8("1-based page number.")),
-  index: optional7(num6(int6, gte6(0), description8("0-based image index within the page. If provided, Vision will analyze the specific image. If omitted, Vision will analyze the entire rendered page."))),
-  cache: optional7(bool4(description8("Use cached Vision result when available. Defaults to true.")))
-});
-
-// src/handlers/pdfVision.ts
-var logger13 = createLogger("PdfVision");
-var DEFAULT_VISION_SCALE = 1.5;
-var getConfiguredVisionProvider = () => {
-  const mistralKey = process.env.MISTRAL_API_KEY;
-  if (mistralKey) {
-    return {
-      type: "mistral",
-      api_key: mistralKey,
-      name: "mistral-vision-default"
-    };
-  }
-  return;
-};
-var checkInMemoryCache2 = (fingerprint, cacheKey, useCache, source, page, index) => {
-  if (!useCache)
-    return;
-  const cached = getCachedOcrText(fingerprint, cacheKey);
-  if (!cached)
-    return;
-  return {
-    success: true,
-    result: {
-      source,
-      success: true,
-      data: {
-        text: cached.text,
-        provider: cached.provider ?? "cache",
-        fingerprint,
-        from_cache: true,
-        ...index !== undefined ? { image: { page, index } } : { page }
-      }
-    }
-  };
-};
-var checkDiskCacheForPage2 = (sourcePath, fingerprint, page, providerKey, providerName, cacheKey, source, useCache) => {
-  if (!useCache || !sourcePath)
-    return;
-  const diskCached = getCachedOcrPage(sourcePath, fingerprint, page, providerKey);
-  if (!diskCached)
-    return;
-  setCachedOcrText(fingerprint, cacheKey, {
-    text: diskCached.text,
-    provider: providerName
-  });
-  logger13.debug("Loaded Vision result from disk cache", { page, path: sourcePath });
-  return {
-    success: true,
-    result: {
-      source,
-      success: true,
-      data: {
-        text: diskCached.text,
-        provider: providerName,
-        fingerprint,
-        from_cache: true,
-        page
-      }
-    }
-  };
-};
-var checkDiskCacheForImage2 = (sourcePath, fingerprint, page, index, providerKey, providerName, cacheKey, source, useCache) => {
-  if (!useCache || !sourcePath)
-    return;
-  const diskCached = getCachedOcrImage(sourcePath, fingerprint, page, index, providerKey);
-  if (!diskCached)
-    return;
-  setCachedOcrText(fingerprint, cacheKey, {
-    text: diskCached.text,
-    provider: providerName
-  });
-  logger13.debug("Loaded Vision result from disk cache", { page, index, path: sourcePath });
-  return {
-    success: true,
-    result: {
-      source,
-      success: true,
-      data: {
-        text: diskCached.text,
-        provider: providerName,
-        fingerprint,
-        from_cache: true,
-        image: { page, index }
-      }
-    }
-  };
-};
-var executePageVisionAndCache = async (pdfDocument, page, provider, fingerprint, cacheKey, providerKey, sourcePath, source) => {
-  const { data: imageData } = await renderPageToPng(pdfDocument, page, DEFAULT_VISION_SCALE);
-  const visionResult = await performOcr(imageData, provider);
-  setCachedOcrText(fingerprint, cacheKey, {
-    text: visionResult.text,
-    provider: visionResult.provider
-  });
-  if (sourcePath) {
-    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
-      text: visionResult.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString()
-    });
-    logger13.debug("Saved Vision result to disk cache", { page, path: sourcePath });
-  }
-  return {
-    success: true,
-    result: {
-      source,
-      success: true,
-      data: {
-        ...visionResult,
-        fingerprint,
-        from_cache: false,
-        page
-      }
-    }
-  };
-};
-var performPageVision = async (source, sourceDescription, page, provider, useCache, pdfDocument) => {
-  const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
-  const providerKey = buildOcrProviderKey(provider);
-  const cacheKey = `page-${page}#vision#provider-${providerKey}`;
-  if (!provider) {
-    logger13.info("No Vision provider configured, returning rendered page image", { page });
-    const { data: imageData } = await renderPageToPng(pdfDocument, page, DEFAULT_VISION_SCALE);
-    return {
-      success: false,
-      imageData,
-      metadata: {
-        page,
-        scale: DEFAULT_VISION_SCALE,
-        message: "No Vision provider configured. Returning rendered page image for analysis.",
-        recommendation: "Configure MISTRAL_API_KEY environment variable to enable Mistral Vision API, or analyze this image with Claude Vision."
-      }
-    };
-  }
-  const memoryCached = checkInMemoryCache2(fingerprint, cacheKey, useCache, sourceDescription, page);
-  if (memoryCached)
-    return memoryCached;
-  const diskCached = checkDiskCacheForPage2(source.path, fingerprint, page, providerKey, provider.name ?? "unknown", cacheKey, sourceDescription, useCache);
-  if (diskCached)
-    return diskCached;
-  return executePageVisionAndCache(pdfDocument, page, provider, fingerprint, cacheKey, providerKey, source.path, sourceDescription);
-};
-var performImageVision = async (source, sourceDescription, page, index, provider, useCache, pdfDocument) => {
-  const fingerprint = getDocumentFingerprint(pdfDocument, sourceDescription);
-  const providerKey = buildOcrProviderKey(provider);
-  const cacheKey = `image-${page}-${index}#vision#provider-${providerKey}`;
-  const { images } = await extractImages(pdfDocument, [page]);
-  const target = images.find((img) => img.page === page && img.index === index);
-  if (!target) {
-    throw new Error(`Image with index ${index} not found on page ${page}.`);
-  }
-  if (!provider) {
-    logger13.info("No Vision provider configured, returning extracted image", { page, index });
-    return {
-      success: false,
-      imageData: target.data,
-      metadata: {
-        page,
-        index,
-        width: target.width,
-        height: target.height,
-        format: target.format,
-        message: "No Vision provider configured. Returning extracted image for analysis.",
-        recommendation: "Configure MISTRAL_API_KEY environment variable to enable Mistral Vision API, or analyze this image with Claude Vision."
-      }
-    };
-  }
-  const memoryCached = checkInMemoryCache2(fingerprint, cacheKey, useCache, sourceDescription, page, index);
-  if (memoryCached)
-    return memoryCached;
-  const diskCached = checkDiskCacheForImage2(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", cacheKey, sourceDescription, useCache);
-  if (diskCached)
-    return diskCached;
-  const visionResult = await performOcr(target.data, provider);
-  setCachedOcrText(fingerprint, cacheKey, {
-    text: visionResult.text,
-    provider: visionResult.provider
-  });
-  if (source.path) {
-    await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
-      text: visionResult.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString()
-    });
-    logger13.debug("Saved Vision result to disk cache", { page, index, path: source.path });
-  }
-  return {
-    success: true,
-    result: {
-      source: sourceDescription,
-      success: true,
-      data: {
-        ...visionResult,
-        fingerprint,
-        from_cache: false,
-        image: { page, index }
-      }
-    }
-  };
-};
-var pdfVision = tool7().description(`Analyze diagrams, charts, and technical illustrations using Mistral Vision API
-
-` + `Use this for:
-` + `- Technical diagrams (timing diagrams, circuit diagrams, flowcharts)
-` + `- Charts and graphs
-` + `- Illustrations and visual content
-
-` + `AUTO-FALLBACK: If no MISTRAL_API_KEY is configured, returns base64 image for Claude Vision analysis.
-
-` + `Two modes:
-` + `1. Page Vision: Omit "index" to analyze entire rendered page
-` + `2. Image Vision: Provide "index" to analyze specific image from page
-
-` + `Configuration: Set MISTRAL_API_KEY environment variable to enable Mistral Vision.
-
-` + `Example:
-` + `  pdf_vision({source: {path: "doc.pdf"}, page: 5})  // Full page
-` + '  pdf_vision({source: {path: "doc.pdf"}, page: 5, index: 0})  // Specific image').input(pdfVisionArgsSchema).handler(async ({ input }) => {
-  const { source, page, index, cache } = input;
-  const sourceDescription = source.path ?? source.url ?? "unknown source";
-  const sourceArgs = {
-    ...source.path ? { path: source.path } : {},
-    ...source.url ? { url: source.url } : {}
-  };
-  try {
-    const configuredProvider = getConfiguredVisionProvider();
-    const result = await withPdfDocument(sourceArgs, sourceDescription, async (pdfDocument) => {
-      const totalPages = pdfDocument.numPages;
-      if (page < 1 || page > totalPages) {
-        throw new Error(`Requested page ${page} is out of bounds (1-${totalPages}).`);
-      }
-      if (index !== undefined) {
-        return performImageVision(sourceArgs, sourceDescription, page, index, configuredProvider, cache !== false, pdfDocument);
-      }
-      return performPageVision(sourceArgs, sourceDescription, page, configuredProvider, cache !== false, pdfDocument);
-    });
-    if (!result.success) {
-      const nextStep2 = buildNextStep2({ stage: "vision" });
-      return [
-        text7(JSON.stringify({ ...result.metadata, next_step: nextStep2 }, null, 2)),
-        image3(result.imageData, "image/png")
-      ];
-    }
-    const nextStep = buildNextStep2({ stage: "vision" });
-    return [text7(JSON.stringify({ ...result.result, next_step: nextStep }, null, 2))];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger13.error("Failed to perform Vision analysis", {
-      sourceDescription,
-      page,
-      index,
-      error: message
-    });
-    return toolError7(`Failed to perform Vision analysis on ${sourceDescription}. Reason: ${message}`);
-  }
+  return [text7(JSON.stringify({ results, next_step: nextStep }, null, 2))];
 });
 
 // src/index.ts
@@ -3085,7 +3147,7 @@ process.stdout.write = (chunk, encodingOrCallback, callback) => {
 };
 var server = createServer({
   name: "pdf-reader-mcp",
-  version: "3.0.0",
+  version: "3.1.0",
   instructions: "PDF toolkit for MCP clients: retrieve metadata, read structured pages, search text, extract images, analyze with Vision API (diagrams/charts), perform OCR (scanned text/tables), and manage caches.",
   tools: {
     pdf_info: pdfInfo,

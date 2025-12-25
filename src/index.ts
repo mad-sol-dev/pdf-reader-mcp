@@ -67,7 +67,7 @@ import { pdfSearch } from './handlers/searchPdf.js';
 
 const server = createServer({
   name: 'pdf-reader-mcp',
-  version: '3.0.0',
+  version: '3.1.0',
   instructions:
     'PDF toolkit for MCP clients: retrieve metadata, read structured pages, search text, extract images, analyze with Vision API (diagrams/charts), perform OCR (scanned text/tables), and manage caches.',
   tools: {

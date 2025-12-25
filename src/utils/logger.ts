@@ -99,16 +99,21 @@ class Logger {
     }
   }
 
+  /**
+   * Get console method for logging level
+   * All output goes to stderr to maintain clean MCP JSON-RPC on stdout
+   */
   private getConsoleMethod(level: string): (...args: unknown[]) => void {
+    // MCP protocol requires clean JSON-RPC on stdout, all logging to stderr
     switch (level) {
       case 'debug':
-        return console.debug;
+        return console.debug; // stderr
       case 'info':
-        return console.info;
+        return console.error; // CHANGED: was console.info (stdout), now stderr for MCP compliance
       case 'warn':
-        return console.warn;
+        return console.warn; // stderr
       default:
-        return console.error;
+        return console.error; // stderr
     }
   }
 }

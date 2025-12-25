@@ -63,12 +63,13 @@ bun run inspector
 
 This is an **MCP (Model Context Protocol) server** that provides PDF processing capabilities to AI agents. The architecture emphasizes:
 
-- **Specialized tool handlers** - Each MCP tool (pdf_get_metadata, pdf_read_pages, etc.) has a dedicated handler in `src/handlers/`
+- **Specialized tool handlers** - Each MCP tool (pdf_info, pdf_read, pdf_vision, pdf_ocr, etc.) has a dedicated handler in `src/handlers/`
 - **Parallel processing** - Uses Promise.all for 5-10x speedup when processing multiple pages or PDFs
 - **Y-coordinate ordering** - Content is ordered by Y-position to preserve natural reading flow
 - **Per-page error isolation** - Individual page failures don't crash entire documents
-- **Fingerprint-based caching** - Text and OCR results are cached using document fingerprints
+- **Fingerprint-based caching** - Text, Vision, and OCR results are cached using document fingerprints (memory + disk)
 - **Guardrails** - Large document operations require explicit opt-in (allow_full_document flag) to prevent accidental resource exhaustion
+- **Vision & OCR separation** - Dedicated tools for diagrams (pdf_vision) vs text extraction (pdf_ocr)
 
 ### Layer Structure
 
@@ -76,14 +77,13 @@ This is an **MCP (Model Context Protocol) server** that provides PDF processing 
 src/
 ├── index.ts              # MCP server setup and tool registration
 ├── handlers/             # MCP tool implementations (one per tool)
-│   ├── readPdf.ts       # Legacy all-in-one tool (backward compatible)
-│   ├── getMetadata.ts   # Metadata extraction
-│   ├── readPages.ts     # Structured page reading
-│   ├── searchPdf.ts     # Text search
-│   ├── renderPage.ts    # Page rasterization
-│   ├── ocrPage.ts       # OCR for rendered pages
-│   ├── cache.ts         # Cache management
-│   └── ...
+│   ├── pdfInfo.ts       # Metadata extraction (pdf_info)
+│   ├── pdfRead.ts       # Text extraction with markers (pdf_read)
+│   ├── pdfVision.ts     # Vision API for diagrams (pdf_vision) - NEW!
+│   ├── pdfOcr.ts        # OCR for scanned docs (pdf_ocr)
+│   ├── extractImage.ts  # Raw image extraction (pdf_extract_image)
+│   ├── searchPdf.ts     # Text search (pdf_search)
+│   └── cache.ts         # Cache management (_pdf_cache_clear)
 ├── pdf/                  # PDF processing core
 │   ├── loader.ts        # Document loading (files/URLs)
 │   ├── parser.ts        # Page selection and parsing logic
@@ -92,16 +92,23 @@ src/
 │   └── render.ts        # Page rendering to PNG
 ├── schemas/              # @sylphx/vex validation schemas
 │   ├── pdfSource.ts     # Shared source/pages schemas
-│   ├── readPages.ts     # Per-tool input schemas
-│   └── ...
+│   ├── pdfInfo.ts       # pdf_info schema
+│   ├── pdfRead.ts       # pdf_read schema
+│   ├── pdfVision.ts     # pdf_vision schema - NEW!
+│   ├── pdfOcr.ts        # pdf_ocr schema
+│   ├── pdfSearch.ts     # pdf_search schema
+│   └── extractImage.ts  # pdf_extract_image schema
 ├── utils/                # Shared utilities
-│   ├── cache.ts         # Fingerprint-based caching
+│   ├── cache.ts         # In-memory fingerprint-based caching
+│   ├── diskCache.ts     # Persistent disk cache for OCR/Vision - NEW!
 │   ├── fingerprint.ts   # Document identity hashing
 │   ├── pathUtils.ts     # Path resolution (absolute/relative)
+│   ├── ocr.ts           # OCR/Vision provider integration
 │   ├── errors.ts        # Custom error types
 │   └── logger.ts        # Structured logging
 └── types/                # TypeScript type definitions
-    └── pdf.ts           # Domain types
+    ├── pdf.ts           # Domain types
+    └── cache.ts         # Cache types
 ```
 
 ### Handler Pattern
@@ -114,20 +121,18 @@ Each handler follows this structure:
 
 Example:
 ```typescript
-export const pdfReadPages = tool({
-  description: 'Extract structured text from PDF pages',
-  inputSchema: readPagesArgsSchema,
-  handler: async (args) => {
-    // Parallel processing of all sources
+export const pdfRead = tool()
+  .description('Extract structured text from PDF pages')
+  .input(pdfReadArgsSchema)
+  .handler(async ({ input }) => {
     const results = await Promise.all(
-      args.sources.map(async (source) => {
+      input.sources.map(async (source) => {
         // Per-source error handling
         // Return { source, success, data/error }
       })
     );
-    return text(JSON.stringify({ results }));
-  }
-});
+    return [text(JSON.stringify({ results }))];
+  });
 ```
 
 ### PDF Processing Flow
@@ -158,11 +163,22 @@ Vex schemas are used both for:
 
 ### Caching Strategy
 
-Two separate caches with fingerprint-based keys:
-- **Text cache**: `fingerprint#page#options` → PdfPageText
-- **OCR cache**: `fingerprint#page/image#provider` → OcrResult
+**Three-layer cache architecture:**
+
+1. **In-Memory Cache** (`utils/cache.ts`):
+   - Text cache: `fingerprint#page#options` → PdfPageText
+   - OCR cache: `fingerprint#page/image#provider` → OcrResult
+   - Fast repeated access within same session
+
+2. **Disk Cache** (`utils/diskCache.ts`):
+   - Persistent storage: `{pdf_basename}_ocr.json` next to PDF
+   - Survives MCP server restarts
+   - Vision/OCR results only (expensive API calls)
+   - Fingerprint validation prevents stale data
 
 Fingerprints are SHA-256 hashes of first 64KB of PDF (fast uniqueness check).
+
+**Cache workflow:** Memory → Disk → API call
 
 ### Testing with Vitest
 
@@ -195,6 +211,20 @@ Large documents (>DEFAULT_SAMPLE_PAGE_LIMIT pages) trigger sampling warnings unl
 - `allow_full_document=true` is set
 
 This prevents accidental full reads of 1000+ page PDFs. The warning is added to the `warnings` array in results.
+
+### Vision & OCR Tools
+
+**Major feature split:**
+- `pdf_vision` - Uses Mistral Vision API for technical diagrams, charts, flowcharts
+- `pdf_ocr` - Uses Mistral OCR API for scanned documents, forms, tables
+
+**Key differences:**
+- Vision API: Semantic understanding of visual content (~$0.003/image)
+- OCR API: Text extraction from scans (~$0.002/page)
+- Auto-fallback: Returns PNG image if MISTRAL_API_KEY not configured
+- Both support page-level and image-level extraction
+
+See `TESTING_NOTES.md` for real-world validation (897-page chip datasheets).
 
 ## Important Notes
 

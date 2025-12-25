@@ -4,25 +4,33 @@
 
 ### ✨ Features
 
-- **pdf_read_pages:** add `insert_markers` parameter to insert content type markers inline with text
+- **pdf_vision:** Split Vision API into dedicated tool (from unified pdf_ocr)
+  - New `pdf_vision` tool specifically for analyzing diagrams, charts, and illustrations
+  - Uses Mistral Vision API for semantic understanding of technical graphics
+  - Supports both full page rendering and specific image extraction
+  - Auto-fallback to PNG image when MISTRAL_API_KEY is not configured
+  - Persistent disk cache for Vision results
+  - Clear separation: pdf_vision for diagrams, pdf_ocr for text/tables
+
+- **pdf_read:** add `insert_markers` parameter to insert content type markers inline with text
   - Inserts `[IMAGE n: WxHpx, format]` markers at image positions when enabled
   - Inserts `[TABLE DETECTED: n cols × m rows]` markers for detected table structures
   - Table detection uses X/Y-coordinate alignment heuristics (requires ≥3 columns and ≥3 rows)
-  - Helps identify pages with complex visual content that may need OCR
-  - Enables selective OCR processing (e.g., OCR only 50 of 800 pages with markers)
+  - Helps identify pages with complex visual content that may need Vision/OCR
+  - Enables selective processing (e.g., Vision only 50 of 800 pages with markers)
   - Non-breaking change: defaults to `false` to preserve existing behavior
 
-- **OCR:** add persistent disk cache for OCR results
+- **pdf_ocr:** Persistent disk cache for OCR results
   - 3-layer cache architecture: in-memory → disk → API
   - Stores OCR results as `{pdf_basename}_ocr.json` alongside PDFs
   - Survives MCP server restarts and reduces expensive API calls
   - Fingerprint validation automatically invalidates cache on PDF changes
-  - Supports both page OCR (`pdf_ocr_page`) and image OCR (`pdf_ocr_image`)
+  - Unified tool supports both page OCR and image OCR
   - Only works for file-based PDFs (not URLs)
 
 ### 🐛 Bug Fixes
 
-- **pdf_read_pages:** fix image extraction when `insert_markers=true` but `include_image_indexes=false`
+- **pdf_read:** fix image extraction when `insert_markers=true` but `include_image_indexes=false`
   - Images were not being extracted for marker insertion
   - Now extracts images when EITHER parameter is enabled
 
@@ -78,14 +86,11 @@
 
 - **Complete documentation overhaul** for v2.2.0
   - Complete README.md rewrite with Vision vs OCR distinction throughout
-  - Updated docs/guide/getting-started.md with Mistral examples and API selection guide
-  - Complete docs/guide/index.md rewrite with v2.2.0 feature highlights
-  - Created OCR_COMPARISON_TEST.md with real test results (Page 890 timing diagram)
-  - Rewrote docs/guide/three-stage-ocr-workflow.md with Vision API examples
-  - Updated docs/guide/ocr-providers.md with built-in provider documentation
-  - Created docs/guide/mistral-ocr-capabilities.md for full response structure
-  - Created docs/DOCUMENTATION_AUDIT.md for systematic documentation tracking
-  - Added docs/sessions/2025-12-23-vision-vs-ocr-api-testing.md session log
+  - Created TESTING_NOTES.md with real-world testing results (N3290x Design Guide, 897 pages)
+  - Documented limitations: Vector graphics vs embedded bitmaps
+  - Practical workflow validated on technical chip documentation
+  - Added auto-fallback behavior documentation
+  - Cache architecture clearly documented
   - Credited @sylphx for solid foundation while highlighting massive expansions
 
 ### 🎯 Critical Insights

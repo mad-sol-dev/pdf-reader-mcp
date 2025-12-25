@@ -40,14 +40,18 @@ const getCachedDecision = (fingerprint: string, page: number): OcrDecision | und
 
 const setCachedDecision = (fingerprint: string, page: number, decision: OcrDecision): void => {
   const key = buildDecisionCacheKey(fingerprint, page);
-  if (decisionCache.has(key)) {
-    decisionCache.delete(key);
-  }
+
+  // Just set - Map.set() overwrites existing entries without changing insertion order
+  // for existing keys (ES2015+ Map preserves insertion order)
   decisionCache.set(key, decision);
-  if (decisionCache.size > DECISION_CACHE_MAX_ENTRIES) {
+
+  // Evict oldest entries if over limit
+  while (decisionCache.size > DECISION_CACHE_MAX_ENTRIES) {
     const oldestKey = decisionCache.keys().next().value;
     if (oldestKey) {
       decisionCache.delete(oldestKey);
+    } else {
+      break;
     }
   }
 };
@@ -231,18 +235,20 @@ const handleSmartOcrDecision = async (
   if (!smartOcr) return undefined;
 
   const cached = getCachedDecision(fingerprint, page);
-  let decision = cached;
-  let pageText = '';
 
+  // If cached decision says OCR is needed, skip text extraction entirely
+  if (cached?.needsOcr) {
+    return undefined; // Proceed to OCR
+  }
+
+  // Need to extract text for decision or result
+  const pdfPage = await pdfDocument.getPage(page);
+  const pageText = await extractTextFromPage(pdfPage);
+
+  let decision = cached;
   if (!decision) {
-    const pdfPage = await pdfDocument.getPage(page);
-    pageText = await extractTextFromPage(pdfPage);
     decision = await decideNeedsOcr(pdfPage, pageText);
     setCachedDecision(fingerprint, page, decision);
-  } else {
-    // Decision was cached, extract text now
-    const pdfPage = await pdfDocument.getPage(page);
-    pageText = await extractTextFromPage(pdfPage);
   }
 
   if (!decision.needsOcr) {

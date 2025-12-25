@@ -5,6 +5,7 @@
  * Format: {pdf_basename}_ocr.json
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
@@ -16,12 +17,29 @@ const LOCK_RETRY_MS = 25;
 const LOCK_TIMEOUT_MS = 5_000;
 
 /**
+ * Get cache directory from environment variable or default to PDF directory
+ */
+const getCacheDirectory = (): string | null => {
+  return process.env.PDF_READER_CACHE_DIR ?? null;
+};
+
+/**
  * Generate cache file path from PDF path
  * Example: /path/to/document.pdf → /path/to/document_ocr.json
+ * If PDF_READER_CACHE_DIR is set, uses that directory with hash to avoid collisions
  */
 export const getCacheFilePath = (pdfPath: string): string => {
-  const dir = path.dirname(pdfPath);
+  const cacheDir = getCacheDirectory();
   const basename = path.basename(pdfPath, path.extname(pdfPath));
+
+  if (cacheDir) {
+    // Use configured cache directory with hash to avoid collisions
+    const hash = crypto.createHash('md5').update(pdfPath).digest('hex').slice(0, 8);
+    return path.join(cacheDir, `${basename}_${hash}_ocr.json`);
+  }
+
+  // Default: alongside the PDF
+  const dir = path.dirname(pdfPath);
   return path.join(dir, `${basename}_ocr.json`);
 };
 
@@ -64,6 +82,37 @@ const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+const LOCK_STALE_MS = 60_000; // Consider lock stale after 60 seconds
+
+/**
+ * Check if a lock file is stale (process died or lock too old)
+ */
+const isLockStale = async (lockPath: string): Promise<boolean> => {
+  try {
+    const content = await fsPromises.readFile(lockPath, 'utf-8');
+    const { pid, timestamp } = JSON.parse(content) as { pid: number; timestamp: number };
+
+    // Check if process is still running
+    try {
+      process.kill(pid, 0); // Signal 0 checks existence without killing
+    } catch {
+      logger.debug('Lock process no longer exists', { pid, lockPath });
+      return true; // Process doesn't exist, lock is stale
+    }
+
+    // Check if lock is too old
+    if (Date.now() - timestamp > LOCK_STALE_MS) {
+      logger.debug('Lock exceeded max age', { pid, age: Date.now() - timestamp, lockPath });
+      return true;
+    }
+
+    return false;
+  } catch {
+    // Can't read lock file, consider it stale
+    return true;
+  }
+};
+
 const acquireCacheLock = async (lockPath: string): Promise<fsPromises.FileHandle | null> => {
   const start = Date.now();
 
@@ -71,11 +120,20 @@ const acquireCacheLock = async (lockPath: string): Promise<fsPromises.FileHandle
   while (true) {
     try {
       const handle = await fsPromises.open(lockPath, 'wx');
+      // Write our PID and timestamp to the lock file
+      await handle.write(JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
       return handle;
     } catch (error: unknown) {
       const err = error as NodeJS.ErrnoException;
 
       if (err.code === 'EEXIST') {
+        // Check if lock is stale
+        if (await isLockStale(lockPath)) {
+          logger.warn('Removing stale cache lock', { lockPath });
+          await fsPromises.rm(lockPath, { force: true });
+          continue; // Retry acquisition
+        }
+
         if (Date.now() - start > LOCK_TIMEOUT_MS) {
           throw new Error(`Timed out waiting for cache lock at ${lockPath}`);
         }

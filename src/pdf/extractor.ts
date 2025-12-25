@@ -320,23 +320,29 @@ const extractImagesFromPage = async (
       }
     }
 
-    // Extract each image using shared helper functions
-    const imagePromises = imageIndices.map(async (imgIndex, arrayIndex) => {
-      const argsArray = operatorList.argsArray[imgIndex];
-      if (!argsArray || argsArray.length === 0) {
-        return null;
-      }
+    // Extract images in batches to avoid memory pressure
+    const BATCH_SIZE = 6;
+    for (let batchStart = 0; batchStart < imageIndices.length; batchStart += BATCH_SIZE) {
+      const batch = imageIndices.slice(batchStart, batchStart + BATCH_SIZE);
 
-      const imageName = argsArray[0] as string;
-      const imageResult = await retrieveImageData(page, imageName, pageNum);
-      if (imageResult.warning) {
-        warnings.push(imageResult.warning);
-      }
-      return processImageData(imageResult.data, pageNum, arrayIndex);
-    });
+      const batchPromises = batch.map(async (imgIndex, localIdx) => {
+        const globalIndex = batchStart + localIdx;
+        const argsArray = operatorList.argsArray[imgIndex];
+        if (!argsArray || argsArray.length === 0) {
+          return null;
+        }
 
-    const resolvedImages = await Promise.all(imagePromises);
-    images.push(...resolvedImages.filter((img): img is ExtractedImage => img !== null));
+        const imageName = argsArray[0] as string;
+        const imageResult = await retrieveImageData(page, imageName, pageNum);
+        if (imageResult.warning) {
+          warnings.push(imageResult.warning);
+        }
+        return processImageData(imageResult.data, pageNum, globalIndex);
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      images.push(...batchResults.filter((img): img is ExtractedImage => img !== null));
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Error extracting images from page', { pageNum, error: message });

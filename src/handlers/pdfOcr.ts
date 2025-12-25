@@ -285,12 +285,28 @@ const executePageOcrAndCache = async (
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
   if (sourcePath) {
-    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? 'unknown', {
-      text: ocr.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString(),
-    });
-    logger.debug('Saved OCR result to disk cache', { page, path: sourcePath });
+    try {
+      await setCachedOcrPage(
+        sourcePath,
+        fingerprint,
+        page,
+        providerKey,
+        provider.name ?? 'unknown',
+        {
+          text: ocr.text,
+          provider_hash: providerKey,
+          cached_at: new Date().toISOString(),
+        }
+      );
+      logger.debug('Saved OCR result to disk cache', { page, path: sourcePath });
+    } catch (cacheError) {
+      logger.warn('Failed to persist OCR cache (continuing without cache)', {
+        page,
+        path: sourcePath,
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+      });
+      // Don't throw - return the successful OCR result anyway
+    }
   }
 
   return {
@@ -460,20 +476,30 @@ const performImageOcr = async (
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
 
   if (source.path) {
-    await setCachedOcrImage(
-      source.path,
-      fingerprint,
-      page,
-      index,
-      providerKey,
-      provider.name ?? 'unknown',
-      {
-        text: ocr.text,
-        provider_hash: providerKey,
-        cached_at: new Date().toISOString(),
-      }
-    );
-    logger.debug('Saved OCR result to disk cache', { page, index, path: source.path });
+    try {
+      await setCachedOcrImage(
+        source.path,
+        fingerprint,
+        page,
+        index,
+        providerKey,
+        provider.name ?? 'unknown',
+        {
+          text: ocr.text,
+          provider_hash: providerKey,
+          cached_at: new Date().toISOString(),
+        }
+      );
+      logger.debug('Saved OCR result to disk cache', { page, index, path: source.path });
+    } catch (cacheError) {
+      logger.warn('Failed to persist OCR cache (continuing without cache)', {
+        page,
+        index,
+        path: source.path,
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+      });
+      // Don't throw - return the successful OCR result anyway
+    }
   }
 
   return {

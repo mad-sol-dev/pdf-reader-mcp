@@ -418,20 +418,25 @@ var extractImagesFromPage = async (page, pageNum) => {
         imageIndices.push(i);
       }
     }
-    const imagePromises = imageIndices.map(async (imgIndex, arrayIndex) => {
-      const argsArray = operatorList.argsArray[imgIndex];
-      if (!argsArray || argsArray.length === 0) {
-        return null;
-      }
-      const imageName = argsArray[0];
-      const imageResult = await retrieveImageData(page, imageName, pageNum);
-      if (imageResult.warning) {
-        warnings.push(imageResult.warning);
-      }
-      return processImageData(imageResult.data, pageNum, arrayIndex);
-    });
-    const resolvedImages = await Promise.all(imagePromises);
-    images.push(...resolvedImages.filter((img) => img !== null));
+    const BATCH_SIZE = 6;
+    for (let batchStart = 0;batchStart < imageIndices.length; batchStart += BATCH_SIZE) {
+      const batch = imageIndices.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchPromises = batch.map(async (imgIndex, localIdx) => {
+        const globalIndex = batchStart + localIdx;
+        const argsArray = operatorList.argsArray[imgIndex];
+        if (!argsArray || argsArray.length === 0) {
+          return null;
+        }
+        const imageName = argsArray[0];
+        const imageResult = await retrieveImageData(page, imageName, pageNum);
+        if (imageResult.warning) {
+          warnings.push(imageResult.warning);
+        }
+        return processImageData(imageResult.data, pageNum, globalIndex);
+      });
+      const batchResults = await Promise.all(batchPromises);
+      images.push(...batchResults.filter((img) => img !== null));
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger2.warn("Error extracting images from page", { pageNum, error: message });
@@ -717,15 +722,27 @@ import {
   num,
   object as object2,
   optional as optional2,
+  refine,
   str as str2,
   union
 } from "@sylphx/vex";
 var pageSpecifierSchema = union(array(num(int, gte(1))), str2(min(1)));
-var pdfSourceSchema = object2({
+var basePdfSourceSchema = object2({
   path: optional2(str2(min(1), description2("Path to the local PDF file (absolute or relative to cwd)."))),
   url: optional2(str2(min(1), description2("URL of the PDF file."))),
   pages: optional2(pageSpecifierSchema)
 });
+var pdfSourceSchema = refine(basePdfSourceSchema, (source) => {
+  const hasPath = source.path !== undefined && source.path !== "";
+  const hasUrl = source.url !== undefined && source.url !== "";
+  if (hasPath && hasUrl) {
+    return 'Cannot specify both "path" and "url". Provide exactly one.';
+  }
+  if (!hasPath && !hasUrl) {
+    return 'Must specify either "path" or "url".';
+  }
+  return true;
+}, description2("PDF source: either a local path or a URL, but not both."));
 
 // src/schemas/extractImage.ts
 var extractImageArgsSchema = object3({
@@ -821,6 +838,20 @@ var MAX_PDF_SIZE = 100 * 1024 * 1024;
 var DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 var DEFAULT_READ_TIMEOUT_MS = 15000;
 var DEFAULT_ALLOWED_PROTOCOLS = ["https:", "http:"];
+var isPrivateOrLocalHost = (hostname) => {
+  const privatePatterns = [
+    /^localhost$/i,
+    /^127\./,
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^169\.254\./,
+    /^::1$/,
+    /^fc00:/i,
+    /^fe80:/i
+  ];
+  return privatePatterns.some((pattern) => pattern.test(hostname));
+};
 var fetchPdfBytes = async (url, sourceDescription, options) => {
   let parsedUrl;
   try {
@@ -831,6 +862,9 @@ var fetchPdfBytes = async (url, sourceDescription, options) => {
   const allowedProtocols = options.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
   if (!allowedProtocols.includes(parsedUrl.protocol)) {
     throw new PdfError(-32600 /* InvalidRequest */, `URL protocol '${parsedUrl.protocol}' is not allowed for ${sourceDescription}. Allowed protocols: ${allowedProtocols.join(", ")}`);
+  }
+  if (isPrivateOrLocalHost(parsedUrl.hostname)) {
+    throw new PdfError(-32600 /* InvalidRequest */, `URL points to private/internal network for ${sourceDescription}. This is not allowed for security reasons.`);
   }
   const maxBytes = options.maxBytes ?? MAX_PDF_SIZE;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -1292,15 +1326,24 @@ var pdfOcrArgsSchema = object5({
 });
 
 // src/utils/diskCache.ts
+import crypto from "node:crypto";
 import fs2 from "node:fs";
 import fsPromises from "node:fs/promises";
 import path2 from "node:path";
 var logger9 = createLogger("DiskCache");
 var LOCK_RETRY_MS = 25;
 var LOCK_TIMEOUT_MS = 5000;
+var getCacheDirectory = () => {
+  return process.env.PDF_READER_CACHE_DIR ?? null;
+};
 var getCacheFilePath = (pdfPath) => {
-  const dir = path2.dirname(pdfPath);
+  const cacheDir = getCacheDirectory();
   const basename = path2.basename(pdfPath, path2.extname(pdfPath));
+  if (cacheDir) {
+    const hash = crypto.createHash("md5").update(pdfPath).digest("hex").slice(0, 8);
+    return path2.join(cacheDir, `${basename}_${hash}_ocr.json`);
+  }
+  const dir = path2.dirname(pdfPath);
   return path2.join(dir, `${basename}_ocr.json`);
 };
 var loadOcrCache = (pdfPath) => {
@@ -1330,15 +1373,41 @@ var loadOcrCache = (pdfPath) => {
 var sleep = (ms) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
+var LOCK_STALE_MS = 60000;
+var isLockStale = async (lockPath) => {
+  try {
+    const content = await fsPromises.readFile(lockPath, "utf-8");
+    const { pid, timestamp } = JSON.parse(content);
+    try {
+      process.kill(pid, 0);
+    } catch {
+      logger9.debug("Lock process no longer exists", { pid, lockPath });
+      return true;
+    }
+    if (Date.now() - timestamp > LOCK_STALE_MS) {
+      logger9.debug("Lock exceeded max age", { pid, age: Date.now() - timestamp, lockPath });
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+};
 var acquireCacheLock = async (lockPath) => {
   const start = Date.now();
   while (true) {
     try {
       const handle = await fsPromises.open(lockPath, "wx");
+      await handle.write(JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
       return handle;
     } catch (error) {
       const err = error;
       if (err.code === "EEXIST") {
+        if (await isLockStale(lockPath)) {
+          logger9.warn("Removing stale cache lock", { lockPath });
+          await fsPromises.rm(lockPath, { force: true });
+          continue;
+        }
         if (Date.now() - start > LOCK_TIMEOUT_MS) {
           throw new Error(`Timed out waiting for cache lock at ${lockPath}`);
         }
@@ -1351,7 +1420,14 @@ var acquireCacheLock = async (lockPath) => {
 };
 var releaseCacheLock = async (lockPath, handle) => {
   if (handle) {
-    await handle.close();
+    try {
+      await handle.close();
+    } catch (closeError) {
+      logger9.warn("Failed to close lock file handle", {
+        lockPath,
+        error: closeError instanceof Error ? closeError.message : String(closeError)
+      });
+    }
   }
   await fsPromises.rm(lockPath, { force: true });
 };
@@ -1367,43 +1443,28 @@ var writeCacheFile = async (cachePath, cache) => {
   await fsPromises.writeFile(tempPath, JSON.stringify(cache, null, 2), "utf-8");
   await fsPromises.rename(tempPath, cachePath);
 };
-var mergeCaches = (existing, incoming) => {
-  const now = new Date().toISOString();
-  if (existing && existing.fingerprint === incoming.fingerprint) {
-    return {
-      ...existing,
-      ...incoming,
-      created_at: existing.created_at,
-      updated_at: now,
-      pages: { ...existing.pages, ...incoming.pages },
-      images: { ...existing.images, ...incoming.images }
-    };
-  }
-  return {
-    ...incoming,
-    created_at: incoming.created_at ?? existing?.created_at ?? now,
-    updated_at: now,
-    pages: incoming.pages ?? {},
-    images: incoming.images ?? {}
-  };
-};
-var saveOcrCache = async (pdfPath, cache) => {
+var atomicCacheUpdate = async (pdfPath, fingerprint, ocrProvider, updateFn) => {
   const cachePath = getCacheFilePath(pdfPath);
   const lockPath = `${cachePath}.lock`;
   const lockHandle = await acquireCacheLock(lockPath);
   try {
-    const latest = loadOcrCache(pdfPath);
-    const merged = mergeCaches(latest, cache);
-    await writeCacheFile(cachePath, merged);
-    logger9.debug("Saved OCR cache to disk", {
-      cachePath,
-      pageCount: Object.keys(merged.pages).length,
-      imageCount: Object.keys(merged.images).length
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger9.error("Failed to save OCR cache", { cachePath, error: message });
-    throw new Error(`Failed to save OCR cache: ${message}`);
+    let cache = loadOcrCache(pdfPath);
+    if (!cache || cache.fingerprint !== fingerprint) {
+      if (cache && cache.fingerprint !== fingerprint) {
+        logger9.warn("PDF fingerprint changed, resetting cache", { pdfPath });
+      }
+      cache = {
+        fingerprint,
+        pdf_path: pdfPath,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ocr_provider: ocrProvider,
+        pages: {},
+        images: {}
+      };
+    }
+    updateFn(cache);
+    await writeCacheFile(cachePath, cache);
   } finally {
     await releaseCacheLock(lockPath, lockHandle);
   }
@@ -1434,37 +1495,14 @@ var getCachedOcrPage = (pdfPath, fingerprint, page, providerHash) => {
   return result;
 };
 var setCachedOcrPage = async (pdfPath, fingerprint, page, providerHash, ocrProvider, result) => {
-  let cache = loadOcrCache(pdfPath);
-  if (!cache) {
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {}
+  await atomicCacheUpdate(pdfPath, fingerprint, ocrProvider, (cache) => {
+    const pageKey = String(page);
+    cache.pages[pageKey] = {
+      ...result,
+      provider_hash: providerHash,
+      cached_at: new Date().toISOString()
     };
-  }
-  if (cache.fingerprint !== fingerprint) {
-    logger9.warn("PDF fingerprint changed, resetting cache", { pdfPath });
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {}
-    };
-  }
-  const pageKey = String(page);
-  cache.pages[pageKey] = {
-    ...result,
-    provider_hash: providerHash,
-    cached_at: new Date().toISOString()
-  };
-  await saveOcrCache(pdfPath, cache);
+  });
   logger9.debug("Cached OCR result for page", { page });
 };
 var getCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash) => {
@@ -1493,48 +1531,25 @@ var getCachedOcrImage = (pdfPath, fingerprint, page, imageIndex, providerHash) =
   return result;
 };
 var setCachedOcrImage = async (pdfPath, fingerprint, page, imageIndex, providerHash, ocrProvider, result) => {
-  let cache = loadOcrCache(pdfPath);
-  if (!cache) {
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {}
+  await atomicCacheUpdate(pdfPath, fingerprint, ocrProvider, (cache) => {
+    const imageKey = `${page}/${imageIndex}`;
+    cache.images[imageKey] = {
+      ...result,
+      provider_hash: providerHash,
+      cached_at: new Date().toISOString()
     };
-  }
-  if (cache.fingerprint !== fingerprint) {
-    logger9.warn("PDF fingerprint changed, resetting cache", { pdfPath });
-    cache = {
-      fingerprint,
-      pdf_path: pdfPath,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ocr_provider: ocrProvider,
-      pages: {},
-      images: {}
-    };
-  }
-  const imageKey = `${page}/${imageIndex}`;
-  cache.images[imageKey] = {
-    ...result,
-    provider_hash: providerHash,
-    cached_at: new Date().toISOString()
-  };
-  await saveOcrCache(pdfPath, cache);
+  });
   logger9.debug("Cached OCR result for image", { page, imageIndex });
 };
 
 // src/utils/fingerprint.ts
-import crypto from "node:crypto";
+import crypto2 from "node:crypto";
 var getDocumentFingerprint = (pdfDocument, sourceDescription) => {
   const fingerprint = pdfDocument.fingerprints?.[0];
   if (fingerprint)
     return fingerprint;
   const fallback = `${sourceDescription}-${pdfDocument.numPages}`;
-  return crypto.createHash("sha256").update(fallback).digest("hex");
+  return crypto2.createHash("sha256").update(fallback).digest("hex");
 };
 
 // src/utils/ocr.ts
@@ -1830,14 +1845,13 @@ var buildDecisionCacheKey = (fingerprint, page) => `${fingerprint}#ocr-decision#
 var getCachedDecision = (fingerprint, page) => decisionCache.get(buildDecisionCacheKey(fingerprint, page));
 var setCachedDecision = (fingerprint, page, decision) => {
   const key = buildDecisionCacheKey(fingerprint, page);
-  if (decisionCache.has(key)) {
-    decisionCache.delete(key);
-  }
   decisionCache.set(key, decision);
-  if (decisionCache.size > DECISION_CACHE_MAX_ENTRIES) {
+  while (decisionCache.size > DECISION_CACHE_MAX_ENTRIES) {
     const oldestKey = decisionCache.keys().next().value;
     if (oldestKey) {
       decisionCache.delete(oldestKey);
+    } else {
+      break;
     }
   }
 };
@@ -1964,16 +1978,15 @@ var handleSmartOcrDecision = async (smartOcr, fingerprint, page, source, pdfDocu
   if (!smartOcr)
     return;
   const cached = getCachedDecision(fingerprint, page);
+  if (cached?.needsOcr) {
+    return;
+  }
+  const pdfPage = await pdfDocument.getPage(page);
+  const pageText = await extractTextFromPage(pdfPage);
   let decision = cached;
-  let pageText = "";
   if (!decision) {
-    const pdfPage = await pdfDocument.getPage(page);
-    pageText = await extractTextFromPage(pdfPage);
     decision = await decideNeedsOcr(pdfPage, pageText);
     setCachedDecision(fingerprint, page, decision);
-  } else {
-    const pdfPage = await pdfDocument.getPage(page);
-    pageText = await extractTextFromPage(pdfPage);
   }
   if (!decision.needsOcr) {
     return {
@@ -1999,12 +2012,20 @@ var executePageOcrAndCache = async (pdfDocument, page, scale, provider, fingerpr
   const ocr = await performOcr(imageData, provider);
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
   if (sourcePath) {
-    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
-      text: ocr.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString()
-    });
-    logger10.debug("Saved OCR result to disk cache", { page, path: sourcePath });
+    try {
+      await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
+        text: ocr.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString()
+      });
+      logger10.debug("Saved OCR result to disk cache", { page, path: sourcePath });
+    } catch (cacheError) {
+      logger10.warn("Failed to persist OCR cache (continuing without cache)", {
+        page,
+        path: sourcePath,
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError)
+      });
+    }
   }
   return {
     success: true,
@@ -2083,12 +2104,21 @@ var performImageOcr = async (source, sourceDescription, page, index, provider, u
   const ocr = await performOcr(target.data, provider);
   setCachedOcrText(fingerprint, cacheKey, { text: ocr.text, provider: ocr.provider });
   if (source.path) {
-    await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
-      text: ocr.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString()
-    });
-    logger10.debug("Saved OCR result to disk cache", { page, index, path: source.path });
+    try {
+      await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
+        text: ocr.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString()
+      });
+      logger10.debug("Saved OCR result to disk cache", { page, index, path: source.path });
+    } catch (cacheError) {
+      logger10.warn("Failed to persist OCR cache (continuing without cache)", {
+        page,
+        index,
+        path: source.path,
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError)
+      });
+    }
   }
   return {
     success: true,
@@ -2683,12 +2713,20 @@ var executePageVisionAndCache = async (pdfDocument, page, provider, fingerprint,
     provider: visionResult.provider
   });
   if (sourcePath) {
-    await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
-      text: visionResult.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString()
-    });
-    logger12.debug("Saved Vision result to disk cache", { page, path: sourcePath });
+    try {
+      await setCachedOcrPage(sourcePath, fingerprint, page, providerKey, provider.name ?? "unknown", {
+        text: visionResult.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString()
+      });
+      logger12.debug("Saved Vision result to disk cache", { page, path: sourcePath });
+    } catch (cacheError) {
+      logger12.warn("Failed to persist Vision cache (continuing without cache)", {
+        page,
+        path: sourcePath,
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError)
+      });
+    }
   }
   return {
     success: true,
@@ -2767,12 +2805,21 @@ var performImageVision = async (source, sourceDescription, page, index, provider
     provider: visionResult.provider
   });
   if (source.path) {
-    await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
-      text: visionResult.text,
-      provider_hash: providerKey,
-      cached_at: new Date().toISOString()
-    });
-    logger12.debug("Saved Vision result to disk cache", { page, index, path: source.path });
+    try {
+      await setCachedOcrImage(source.path, fingerprint, page, index, providerKey, provider.name ?? "unknown", {
+        text: visionResult.text,
+        provider_hash: providerKey,
+        cached_at: new Date().toISOString()
+      });
+      logger12.debug("Saved Vision result to disk cache", { page, index, path: source.path });
+    } catch (cacheError) {
+      logger12.warn("Failed to persist Vision cache (continuing without cache)", {
+        page,
+        index,
+        path: source.path,
+        error: cacheError instanceof Error ? cacheError.message : String(cacheError)
+      });
+    }
   }
   return {
     success: true,
@@ -2847,6 +2894,7 @@ var pdfVision = tool6().description(`Analyze diagrams, charts, and technical ill
 
 // src/handlers/searchPdf.ts
 import { text as text7, tool as tool7, toolError as toolError7 } from "@sylphx/mcp-server-sdk";
+import RE2 from "re2";
 
 // src/schemas/pdfSearch.ts
 import {
@@ -2892,17 +2940,32 @@ var findPlainMatches = (textToSearch, query, options, remaining) => {
 };
 var findRegexMatches = (textToSearch, query, options, remaining) => {
   const flags = options.caseSensitive ? "g" : "gi";
-  const regex = new RegExp(query, flags);
   const matches = [];
   const MAX_REGEX_TEXT_LENGTH = 1e6;
   const textForSearch = textToSearch.slice(0, MAX_REGEX_TEXT_LENGTH);
   const wasTextTruncated = textToSearch.length > MAX_REGEX_TEXT_LENGTH;
+  let regex;
+  let usingRE2 = false;
+  try {
+    regex = new RE2(query, flags);
+    usingRE2 = true;
+    logger13.debug("Using RE2 for safe regex search", { pattern: query });
+  } catch (re2Error) {
+    logger13.warn("RE2 does not support this pattern, falling back to native RegExp", {
+      pattern: query,
+      error: re2Error instanceof Error ? re2Error.message : String(re2Error)
+    });
+    if (query.length > 50) {
+      throw new Error("Complex regex patterns not supported by RE2 are limited to 50 characters for safety");
+    }
+    regex = new RegExp(query, flags);
+  }
   const REGEX_TIMEOUT_MS = 5000;
   const deadline = Date.now() + REGEX_TIMEOUT_MS;
   let iterationCount = 0;
   let match = regex.exec(textForSearch);
   while (match !== null && matches.length < remaining) {
-    if (++iterationCount % 100 === 0 && Date.now() > deadline) {
+    if (!usingRE2 && ++iterationCount % 100 === 0 && Date.now() > deadline) {
       logger13.warn("Regex search exceeded timeout, stopping early", {
         matchesFound: matches.length,
         pattern: query

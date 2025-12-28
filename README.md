@@ -161,7 +161,7 @@ This project is built on the excellent foundation from **[SylphxAI/pdf-reader-mc
 
 **Contributors:**
 - **Sylphx Team** - Original architecture and core PDF processing
-- **Martin & Claude Sonnet 4.5** - Vision/OCR integration, testing, docs
+- **mad-sol-dev & Claude Sonnet 4.5** - Vision/OCR integration, testing, docs
 
 ---
 
